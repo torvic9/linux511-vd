@@ -1,0 +1,3014 @@
+From fb084fde0c8106bc86df243411751c3421c07c08 Mon Sep 17 00:00:00 2001
+From: Julien Thierry <jthierry@redhat.com>
+Date: Wed, 14 Oct 2020 08:38:00 +0100
+Subject: [PATCH] objtool: Fully validate the stack frame
+
+A valid stack frame should contain both the return address and the
+previous frame pointer value.
+
+On x86, the return value is placed on the stack by the calling
+instructions. On other architectures, the callee needs to explicitly
+save the return address on the stack.
+
+Add the necessary checks to verify a function properly sets up all the
+elements of the stack frame.
+
+Signed-off-by: Julien Thierry <jthierry@redhat.com>
+Acked-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Signed-off-by: Josh Poimboeuf <jpoimboe@redhat.com>
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ tools/objtool/check.c | 15 +++++++++++----
+ 1 file changed, 11 insertions(+), 4 deletions(-)
+
+diff --git a/tools/objtool/check.c b/tools/objtool/check.c
+index 5f8d3eed7..88210b085 100644
+--- a/tools/objtool/check.c
++++ b/tools/objtool/check.c
+@@ -1733,12 +1733,20 @@ static bool has_modified_stack_frame(struct instruction *insn, struct insn_state
+ 	return false;
+ }
+ 
++static bool check_reg_frame_pos(const struct cfi_reg *reg,
++				int expected_offset)
++{
++	return reg->base == CFI_CFA &&
++	       reg->offset == expected_offset;
++}
++
+ static bool has_valid_stack_frame(struct insn_state *state)
+ {
+ 	struct cfi_state *cfi = &state->cfi;
+ 
+-	if (cfi->cfa.base == CFI_BP && cfi->regs[CFI_BP].base == CFI_CFA &&
+-	    cfi->regs[CFI_BP].offset == -16)
++	if (cfi->cfa.base == CFI_BP &&
++	    check_reg_frame_pos(&cfi->regs[CFI_BP], -cfi->cfa.offset) &&
++	    check_reg_frame_pos(&cfi->regs[CFI_RA], -cfi->cfa.offset + 8))
+ 		return true;
+ 
+ 	if (cfi->drap && cfi->regs[CFI_BP].base == CFI_BP)
+@@ -1867,8 +1875,7 @@ static int update_cfi_state(struct instruction *insn, struct cfi_state *cfi,
+ 		case OP_SRC_REG:
+ 			if (op->src.reg == CFI_SP && op->dest.reg == CFI_BP &&
+ 			    cfa->base == CFI_SP &&
+-			    regs[CFI_BP].base == CFI_CFA &&
+-			    regs[CFI_BP].offset == -cfa->offset) {
++			    check_reg_frame_pos(&regs[CFI_BP], -cfa->offset)) {
+ 
+ 				/* mov %rsp, %rbp */
+ 				cfa->base = op->dest.reg;
+-- 
+2.30.0
+
+From 468af56a7bbaa626da5a4578bedc930d731fba13 Mon Sep 17 00:00:00 2001
+From: Julien Thierry <jthierry@redhat.com>
+Date: Wed, 14 Oct 2020 08:38:01 +0100
+Subject: [PATCH] objtool: Support addition to set CFA base
+
+On arm64, the compiler can set the frame pointer either
+with a move operation or with and add operation like:
+
+    add (SP + constant), BP
+
+For a simple move operation, the CFA base is changed from SP to BP.
+Handle also changing the CFA base when the frame pointer is set with
+an addition instruction.
+
+Signed-off-by: Julien Thierry <jthierry@redhat.com>
+Acked-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Signed-off-by: Josh Poimboeuf <jpoimboe@redhat.com>
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ tools/objtool/check.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/tools/objtool/check.c b/tools/objtool/check.c
+index 88210b085..00d00f904 100644
+--- a/tools/objtool/check.c
++++ b/tools/objtool/check.c
+@@ -1960,6 +1960,17 @@ static int update_cfi_state(struct instruction *insn, struct cfi_state *cfi,
+ 				break;
+ 			}
+ 
++			if (!cfi->drap && op->src.reg == CFI_SP &&
++			    op->dest.reg == CFI_BP && cfa->base == CFI_SP &&
++			    check_reg_frame_pos(&regs[CFI_BP], -cfa->offset + op->src.offset)) {
++
++				/* lea disp(%rsp), %rbp */
++				cfa->base = CFI_BP;
++				cfa->offset -= op->src.offset;
++				cfi->bp_scratch = false;
++				break;
++			}
++
+ 			if (op->src.reg == CFI_SP && cfa->base == CFI_SP) {
+ 
+ 				/* drap: lea disp(%rsp), %drap */
+-- 
+2.30.0
+
+From 201ef5a974e24112953b74cc9f33dcfc4cbcc1cb Mon Sep 17 00:00:00 2001
+From: Julien Thierry <jthierry@redhat.com>
+Date: Wed, 14 Oct 2020 08:38:02 +0100
+Subject: [PATCH] objtool: Make SP memory operation match PUSH/POP semantics
+
+Architectures without PUSH/POP instructions will always access the stack
+though memory operations (SRC/DEST_INDIRECT). Make those operations have
+the same effect on the CFA as PUSH/POP, with no stack pointer
+modification.
+
+Signed-off-by: Julien Thierry <jthierry@redhat.com>
+Acked-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Signed-off-by: Josh Poimboeuf <jpoimboe@redhat.com>
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ tools/objtool/check.c | 20 ++++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+diff --git a/tools/objtool/check.c b/tools/objtool/check.c
+index 00d00f904..270adc38d 100644
+--- a/tools/objtool/check.c
++++ b/tools/objtool/check.c
+@@ -2065,6 +2065,14 @@ static int update_cfi_state(struct instruction *insn, struct cfi_state *cfi,
+ 			break;
+ 
+ 		case OP_SRC_REG_INDIRECT:
++			if (!cfi->drap && op->dest.reg == cfa->base &&
++			    op->dest.reg == CFI_BP) {
++
++				/* mov disp(%rsp), %rbp */
++				cfa->base = CFI_SP;
++				cfa->offset = cfi->stack_size;
++			}
++
+ 			if (cfi->drap && op->src.reg == CFI_BP &&
+ 			    op->src.offset == cfi->drap_offset) {
+ 
+@@ -2086,6 +2094,12 @@ static int update_cfi_state(struct instruction *insn, struct cfi_state *cfi,
+ 				/* mov disp(%rbp), %reg */
+ 				/* mov disp(%rsp), %reg */
+ 				restore_reg(cfi, op->dest.reg);
++
++			} else if (op->src.reg == CFI_SP &&
++				   op->src.offset == regs[op->dest.reg].offset + cfi->stack_size) {
++
++				/* mov disp(%rsp), %reg */
++				restore_reg(cfi, op->dest.reg);
+ 			}
+ 
+ 			break;
+@@ -2163,6 +2177,12 @@ static int update_cfi_state(struct instruction *insn, struct cfi_state *cfi,
+ 			/* mov reg, disp(%rsp) */
+ 			save_reg(cfi, op->src.reg, CFI_CFA,
+ 				 op->dest.offset - cfi->cfa.offset);
++
++		} else if (op->dest.reg == CFI_SP) {
++
++			/* mov reg, disp(%rsp) */
++			save_reg(cfi, op->src.reg, CFI_CFA,
++				 op->dest.offset - cfi->stack_size);
+ 		}
+ 
+ 		break;
+-- 
+2.30.0
+
+From c8d7b7e592f471ec1da39d872dc6bbf767a812e7 Mon Sep 17 00:00:00 2001
+From: Vasily Gorbik <gor@linux.ibm.com>
+Date: Fri, 13 Nov 2020 00:03:20 +0100
+Subject: [PATCH] x86/tools: Use tools headers for instruction decoder
+ selftests
+
+Currently the x86 instruction decoder is used from:
+- the kernel itself,
+- from tools like objtool and perf,
+- within x86 tools, i.e. instruction decoder selftests.
+
+The first two cases are similar, because tools headers try to mimic
+kernel headers.
+
+Instruction decoder selftests include some of the kernel headers
+directly, including uapi headers. This works until headers dependencies
+are kept to a minimum and tools are not cross-compiled. Since the goal
+of the x86 instruction decoder selftests is not to verify uapi headers,
+move it to using tools headers, like is already done for vdso2c tool,
+mkpiggy and other tools in arch/x86/boot/.
+
+Signed-off-by: Vasily Gorbik <gor@linux.ibm.com>
+Acked-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Acked-by: Masami Hiramatsu <mhiramat@kernel.org>
+Signed-off-by: Josh Poimboeuf <jpoimboe@redhat.com>
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ arch/x86/tools/Makefile | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/arch/x86/tools/Makefile b/arch/x86/tools/Makefile
+index 55b1ab378..bddfc9a46 100644
+--- a/arch/x86/tools/Makefile
++++ b/arch/x86/tools/Makefile
+@@ -29,14 +29,14 @@ posttest: $(obj)/insn_decoder_test vmlinux $(obj)/insn_sanity
+ hostprogs += insn_decoder_test insn_sanity
+ 
+ # -I needed for generated C source and C source which in the kernel tree.
+-HOSTCFLAGS_insn_decoder_test.o := -Wall -I$(objtree)/arch/x86/lib/ -I$(srctree)/arch/x86/include/uapi/ -I$(srctree)/arch/x86/include/ -I$(srctree)/arch/x86/lib/ -I$(srctree)/include/uapi/
++HOSTCFLAGS_insn_decoder_test.o := -Wall -I$(srctree)/tools/arch/x86/lib/ -I$(srctree)/tools/arch/x86/include/ -I$(objtree)/arch/x86/lib/
+ 
+-HOSTCFLAGS_insn_sanity.o := -Wall -I$(objtree)/arch/x86/lib/ -I$(srctree)/arch/x86/include/ -I$(srctree)/arch/x86/lib/ -I$(srctree)/include/
++HOSTCFLAGS_insn_sanity.o := -Wall -I$(srctree)/tools/arch/x86/lib/ -I$(srctree)/tools/arch/x86/include/ -I$(objtree)/arch/x86/lib/
+ 
+ # Dependencies are also needed.
+-$(obj)/insn_decoder_test.o: $(srctree)/arch/x86/lib/insn.c $(srctree)/arch/x86/lib/inat.c $(srctree)/arch/x86/include/asm/inat_types.h $(srctree)/arch/x86/include/asm/inat.h $(srctree)/arch/x86/include/asm/insn.h $(objtree)/arch/x86/lib/inat-tables.c
++$(obj)/insn_decoder_test.o: $(srctree)/tools/arch/x86/lib/insn.c $(srctree)/tools/arch/x86/lib/inat.c $(srctree)/tools/arch/x86/include/asm/inat_types.h $(srctree)/tools/arch/x86/include/asm/inat.h $(srctree)/tools/arch/x86/include/asm/insn.h $(objtree)/arch/x86/lib/inat-tables.c
+ 
+-$(obj)/insn_sanity.o: $(srctree)/arch/x86/lib/insn.c $(srctree)/arch/x86/lib/inat.c $(srctree)/arch/x86/include/asm/inat_types.h $(srctree)/arch/x86/include/asm/inat.h $(srctree)/arch/x86/include/asm/insn.h $(objtree)/arch/x86/lib/inat-tables.c
++$(obj)/insn_sanity.o: $(srctree)/tools/arch/x86/lib/insn.c $(srctree)/tools/arch/x86/lib/inat.c $(srctree)/tools/arch/x86/include/asm/inat_types.h $(srctree)/tools/arch/x86/include/asm/inat.h $(srctree)/tools/arch/x86/include/asm/insn.h $(objtree)/arch/x86/lib/inat-tables.c
+ 
+ HOST_EXTRACFLAGS += -I$(srctree)/tools/include
+ hostprogs	+= relocs
+-- 
+2.30.0
+
+From 1d509f2a6ebca1aea3089c769f6375f01a832e9b Mon Sep 17 00:00:00 2001
+From: Martin Schwidefsky <schwidefsky@de.ibm.com>
+Date: Fri, 13 Nov 2020 00:03:23 +0100
+Subject: [PATCH] x86/insn: Support big endian cross-compiles
+
+The x86 instruction decoder code is shared across the kernel source and
+the tools. Currently objtool seems to be the only tool from build tools
+needed which breaks x86 cross-compilation on big endian systems. Make
+the x86 instruction decoder build host endianness agnostic to support
+x86 cross-compilation and enable objtool to implement endianness
+awareness for big endian architectures support.
+
+Signed-off-by: Martin Schwidefsky <schwidefsky@de.ibm.com>
+Co-developed-by: Vasily Gorbik <gor@linux.ibm.com>
+Signed-off-by: Vasily Gorbik <gor@linux.ibm.com>
+Acked-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Acked-by: Masami Hiramatsu <mhiramat@kernel.org>
+Signed-off-by: Josh Poimboeuf <jpoimboe@redhat.com>
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ arch/x86/include/asm/insn.h       |  33 ++++++++++
+ arch/x86/lib/insn.c               | 101 ++++++++++++++----------------
+ arch/x86/tools/insn_sanity.c      |   4 --
+ tools/arch/x86/include/asm/insn.h |  33 ++++++++++
+ tools/arch/x86/lib/insn.c         | 101 ++++++++++++++----------------
+ 5 files changed, 160 insertions(+), 112 deletions(-)
+
+diff --git a/arch/x86/include/asm/insn.h b/arch/x86/include/asm/insn.h
+index a8c3d284f..090863cfb 100644
+--- a/arch/x86/include/asm/insn.h
++++ b/arch/x86/include/asm/insn.h
+@@ -7,9 +7,12 @@
+  * Copyright (C) IBM Corporation, 2009
+  */
+ 
++#include <asm/byteorder.h>
+ /* insn_attr_t is defined in inat.h */
+ #include <asm/inat.h>
+ 
++#if defined(__BYTE_ORDER) ? __BYTE_ORDER == __LITTLE_ENDIAN : defined(__LITTLE_ENDIAN)
++
+ struct insn_field {
+ 	union {
+ 		insn_value_t value;
+@@ -20,6 +23,36 @@ struct insn_field {
+ 	unsigned char nbytes;
+ };
+ 
++static inline void insn_field_set(struct insn_field *p, insn_value_t v,
++				  unsigned char n)
++{
++	p->value = v;
++	p->nbytes = n;
++}
++
++#else
++
++struct insn_field {
++	insn_value_t value;
++	union {
++		insn_value_t little;
++		insn_byte_t bytes[4];
++	};
++	/* !0 if we've run insn_get_xxx() for this field */
++	unsigned char got;
++	unsigned char nbytes;
++};
++
++static inline void insn_field_set(struct insn_field *p, insn_value_t v,
++				  unsigned char n)
++{
++	p->value = v;
++	p->little = __cpu_to_le32(v);
++	p->nbytes = n;
++}
++
++#endif
++
+ struct insn {
+ 	struct insn_field prefixes;	/*
+ 					 * Prefixes
+diff --git a/arch/x86/lib/insn.c b/arch/x86/lib/insn.c
+index 404279563..520b31fc1 100644
+--- a/arch/x86/lib/insn.c
++++ b/arch/x86/lib/insn.c
+@@ -5,6 +5,7 @@
+  * Copyright (C) IBM Corporation, 2002, 2004, 2009
+  */
+ 
++#include <linux/kernel.h>
+ #ifdef __KERNEL__
+ #include <linux/string.h>
+ #else
+@@ -15,15 +16,28 @@
+ 
+ #include <asm/emulate_prefix.h>
+ 
++#define leXX_to_cpu(t, r)						\
++({									\
++	__typeof__(t) v;						\
++	switch (sizeof(t)) {						\
++	case 4: v = le32_to_cpu(r); break;				\
++	case 2: v = le16_to_cpu(r); break;				\
++	case 1:	v = r; break;						\
++	default:							\
++		BUILD_BUG(); break;					\
++	}								\
++	v;								\
++})
++
+ /* Verify next sizeof(t) bytes can be on the same instruction */
+ #define validate_next(t, insn, n)	\
+ 	((insn)->next_byte + sizeof(t) + n <= (insn)->end_kaddr)
+ 
+ #define __get_next(t, insn)	\
+-	({ t r = *(t*)insn->next_byte; insn->next_byte += sizeof(t); r; })
++	({ t r = *(t*)insn->next_byte; insn->next_byte += sizeof(t); leXX_to_cpu(t, r); })
+ 
+ #define __peek_nbyte_next(t, insn, n)	\
+-	({ t r = *(t*)((insn)->next_byte + n); r; })
++	({ t r = *(t*)((insn)->next_byte + n); leXX_to_cpu(t, r); })
+ 
+ #define get_next(t, insn)	\
+ 	({ if (unlikely(!validate_next(t, insn, 0))) goto err_out; __get_next(t, insn); })
+@@ -157,8 +171,7 @@ void insn_get_prefixes(struct insn *insn)
+ 		b = peek_next(insn_byte_t, insn);
+ 		attr = inat_get_opcode_attribute(b);
+ 		if (inat_is_rex_prefix(attr)) {
+-			insn->rex_prefix.value = b;
+-			insn->rex_prefix.nbytes = 1;
++			insn_field_set(&insn->rex_prefix, b, 1);
+ 			insn->next_byte++;
+ 			if (X86_REX_W(b))
+ 				/* REX.W overrides opnd_size */
+@@ -295,8 +308,7 @@ void insn_get_modrm(struct insn *insn)
+ 
+ 	if (inat_has_modrm(insn->attr)) {
+ 		mod = get_next(insn_byte_t, insn);
+-		modrm->value = mod;
+-		modrm->nbytes = 1;
++		insn_field_set(modrm, mod, 1);
+ 		if (inat_is_group(insn->attr)) {
+ 			pfx_id = insn_last_prefix_id(insn);
+ 			insn->attr = inat_get_group_attribute(mod, pfx_id,
+@@ -334,7 +346,7 @@ int insn_rip_relative(struct insn *insn)
+ 	 * For rip-relative instructions, the mod field (top 2 bits)
+ 	 * is zero and the r/m field (bottom 3 bits) is 0x5.
+ 	 */
+-	return (modrm->nbytes && (modrm->value & 0xc7) == 0x5);
++	return (modrm->nbytes && (modrm->bytes[0] & 0xc7) == 0x5);
+ }
+ 
+ /**
+@@ -353,11 +365,11 @@ void insn_get_sib(struct insn *insn)
+ 	if (!insn->modrm.got)
+ 		insn_get_modrm(insn);
+ 	if (insn->modrm.nbytes) {
+-		modrm = (insn_byte_t)insn->modrm.value;
++		modrm = insn->modrm.bytes[0];
+ 		if (insn->addr_bytes != 2 &&
+ 		    X86_MODRM_MOD(modrm) != 3 && X86_MODRM_RM(modrm) == 4) {
+-			insn->sib.value = get_next(insn_byte_t, insn);
+-			insn->sib.nbytes = 1;
++			insn_field_set(&insn->sib,
++				       get_next(insn_byte_t, insn), 1);
+ 		}
+ 	}
+ 	insn->sib.got = 1;
+@@ -407,19 +419,18 @@ void insn_get_displacement(struct insn *insn)
+ 		if (mod == 3)
+ 			goto out;
+ 		if (mod == 1) {
+-			insn->displacement.value = get_next(signed char, insn);
+-			insn->displacement.nbytes = 1;
++			insn_field_set(&insn->displacement,
++				       get_next(signed char, insn), 1);
+ 		} else if (insn->addr_bytes == 2) {
+ 			if ((mod == 0 && rm == 6) || mod == 2) {
+-				insn->displacement.value =
+-					 get_next(short, insn);
+-				insn->displacement.nbytes = 2;
++				insn_field_set(&insn->displacement,
++					       get_next(short, insn), 2);
+ 			}
+ 		} else {
+ 			if ((mod == 0 && rm == 5) || mod == 2 ||
+ 			    (mod == 0 && base == 5)) {
+-				insn->displacement.value = get_next(int, insn);
+-				insn->displacement.nbytes = 4;
++				insn_field_set(&insn->displacement,
++					       get_next(int, insn), 4);
+ 			}
+ 		}
+ 	}
+@@ -435,18 +446,14 @@ static int __get_moffset(struct insn *insn)
+ {
+ 	switch (insn->addr_bytes) {
+ 	case 2:
+-		insn->moffset1.value = get_next(short, insn);
+-		insn->moffset1.nbytes = 2;
++		insn_field_set(&insn->moffset1, get_next(short, insn), 2);
+ 		break;
+ 	case 4:
+-		insn->moffset1.value = get_next(int, insn);
+-		insn->moffset1.nbytes = 4;
++		insn_field_set(&insn->moffset1, get_next(int, insn), 4);
+ 		break;
+ 	case 8:
+-		insn->moffset1.value = get_next(int, insn);
+-		insn->moffset1.nbytes = 4;
+-		insn->moffset2.value = get_next(int, insn);
+-		insn->moffset2.nbytes = 4;
++		insn_field_set(&insn->moffset1, get_next(int, insn), 4);
++		insn_field_set(&insn->moffset2, get_next(int, insn), 4);
+ 		break;
+ 	default:	/* opnd_bytes must be modified manually */
+ 		goto err_out;
+@@ -464,13 +471,11 @@ static int __get_immv32(struct insn *insn)
+ {
+ 	switch (insn->opnd_bytes) {
+ 	case 2:
+-		insn->immediate.value = get_next(short, insn);
+-		insn->immediate.nbytes = 2;
++		insn_field_set(&insn->immediate, get_next(short, insn), 2);
+ 		break;
+ 	case 4:
+ 	case 8:
+-		insn->immediate.value = get_next(int, insn);
+-		insn->immediate.nbytes = 4;
++		insn_field_set(&insn->immediate, get_next(int, insn), 4);
+ 		break;
+ 	default:	/* opnd_bytes must be modified manually */
+ 		goto err_out;
+@@ -487,18 +492,15 @@ static int __get_immv(struct insn *insn)
+ {
+ 	switch (insn->opnd_bytes) {
+ 	case 2:
+-		insn->immediate1.value = get_next(short, insn);
+-		insn->immediate1.nbytes = 2;
++		insn_field_set(&insn->immediate1, get_next(short, insn), 2);
+ 		break;
+ 	case 4:
+-		insn->immediate1.value = get_next(int, insn);
++		insn_field_set(&insn->immediate1, get_next(int, insn), 4);
+ 		insn->immediate1.nbytes = 4;
+ 		break;
+ 	case 8:
+-		insn->immediate1.value = get_next(int, insn);
+-		insn->immediate1.nbytes = 4;
+-		insn->immediate2.value = get_next(int, insn);
+-		insn->immediate2.nbytes = 4;
++		insn_field_set(&insn->immediate1, get_next(int, insn), 4);
++		insn_field_set(&insn->immediate2, get_next(int, insn), 4);
+ 		break;
+ 	default:	/* opnd_bytes must be modified manually */
+ 		goto err_out;
+@@ -515,12 +517,10 @@ static int __get_immptr(struct insn *insn)
+ {
+ 	switch (insn->opnd_bytes) {
+ 	case 2:
+-		insn->immediate1.value = get_next(short, insn);
+-		insn->immediate1.nbytes = 2;
++		insn_field_set(&insn->immediate1, get_next(short, insn), 2);
+ 		break;
+ 	case 4:
+-		insn->immediate1.value = get_next(int, insn);
+-		insn->immediate1.nbytes = 4;
++		insn_field_set(&insn->immediate1, get_next(int, insn), 4);
+ 		break;
+ 	case 8:
+ 		/* ptr16:64 is not exist (no segment) */
+@@ -528,8 +528,7 @@ static int __get_immptr(struct insn *insn)
+ 	default:	/* opnd_bytes must be modified manually */
+ 		goto err_out;
+ 	}
+-	insn->immediate2.value = get_next(unsigned short, insn);
+-	insn->immediate2.nbytes = 2;
++	insn_field_set(&insn->immediate2, get_next(unsigned short, insn), 2);
+ 	insn->immediate1.got = insn->immediate2.got = 1;
+ 
+ 	return 1;
+@@ -565,22 +564,17 @@ void insn_get_immediate(struct insn *insn)
+ 
+ 	switch (inat_immediate_size(insn->attr)) {
+ 	case INAT_IMM_BYTE:
+-		insn->immediate.value = get_next(signed char, insn);
+-		insn->immediate.nbytes = 1;
++		insn_field_set(&insn->immediate, get_next(signed char, insn), 1);
+ 		break;
+ 	case INAT_IMM_WORD:
+-		insn->immediate.value = get_next(short, insn);
+-		insn->immediate.nbytes = 2;
++		insn_field_set(&insn->immediate, get_next(short, insn), 2);
+ 		break;
+ 	case INAT_IMM_DWORD:
+-		insn->immediate.value = get_next(int, insn);
+-		insn->immediate.nbytes = 4;
++		insn_field_set(&insn->immediate, get_next(int, insn), 4);
+ 		break;
+ 	case INAT_IMM_QWORD:
+-		insn->immediate1.value = get_next(int, insn);
+-		insn->immediate1.nbytes = 4;
+-		insn->immediate2.value = get_next(int, insn);
+-		insn->immediate2.nbytes = 4;
++		insn_field_set(&insn->immediate1, get_next(int, insn), 4);
++		insn_field_set(&insn->immediate2, get_next(int, insn), 4);
+ 		break;
+ 	case INAT_IMM_PTR:
+ 		if (!__get_immptr(insn))
+@@ -599,8 +593,7 @@ void insn_get_immediate(struct insn *insn)
+ 		goto err_out;
+ 	}
+ 	if (inat_has_second_immediate(insn->attr)) {
+-		insn->immediate2.value = get_next(signed char, insn);
+-		insn->immediate2.nbytes = 1;
++		insn_field_set(&insn->immediate2, get_next(signed char, insn), 1);
+ 	}
+ done:
+ 	insn->immediate.got = 1;
+diff --git a/arch/x86/tools/insn_sanity.c b/arch/x86/tools/insn_sanity.c
+index 185ceba9d..c6a0000ae 100644
+--- a/arch/x86/tools/insn_sanity.c
++++ b/arch/x86/tools/insn_sanity.c
+@@ -14,10 +14,6 @@
+ #include <sys/types.h>
+ #include <sys/stat.h>
+ #include <fcntl.h>
+-
+-#define unlikely(cond) (cond)
+-#define ARRAY_SIZE(a)	(sizeof(a)/sizeof(a[0]))
+-
+ #include <asm/insn.h>
+ #include <inat.c>
+ #include <insn.c>
+diff --git a/tools/arch/x86/include/asm/insn.h b/tools/arch/x86/include/asm/insn.h
+index 52c6262e6..c1fab7a57 100644
+--- a/tools/arch/x86/include/asm/insn.h
++++ b/tools/arch/x86/include/asm/insn.h
+@@ -7,9 +7,12 @@
+  * Copyright (C) IBM Corporation, 2009
+  */
+ 
++#include <asm/byteorder.h>
+ /* insn_attr_t is defined in inat.h */
+ #include "inat.h"
+ 
++#if defined(__BYTE_ORDER) ? __BYTE_ORDER == __LITTLE_ENDIAN : defined(__LITTLE_ENDIAN)
++
+ struct insn_field {
+ 	union {
+ 		insn_value_t value;
+@@ -20,6 +23,36 @@ struct insn_field {
+ 	unsigned char nbytes;
+ };
+ 
++static inline void insn_field_set(struct insn_field *p, insn_value_t v,
++				  unsigned char n)
++{
++	p->value = v;
++	p->nbytes = n;
++}
++
++#else
++
++struct insn_field {
++	insn_value_t value;
++	union {
++		insn_value_t little;
++		insn_byte_t bytes[4];
++	};
++	/* !0 if we've run insn_get_xxx() for this field */
++	unsigned char got;
++	unsigned char nbytes;
++};
++
++static inline void insn_field_set(struct insn_field *p, insn_value_t v,
++				  unsigned char n)
++{
++	p->value = v;
++	p->little = __cpu_to_le32(v);
++	p->nbytes = n;
++}
++
++#endif
++
+ struct insn {
+ 	struct insn_field prefixes;	/*
+ 					 * Prefixes
+diff --git a/tools/arch/x86/lib/insn.c b/tools/arch/x86/lib/insn.c
+index 0151dfc6d..77e92aa52 100644
+--- a/tools/arch/x86/lib/insn.c
++++ b/tools/arch/x86/lib/insn.c
+@@ -5,6 +5,7 @@
+  * Copyright (C) IBM Corporation, 2002, 2004, 2009
+  */
+ 
++#include <linux/kernel.h>
+ #ifdef __KERNEL__
+ #include <linux/string.h>
+ #else
+@@ -15,15 +16,28 @@
+ 
+ #include "../include/asm/emulate_prefix.h"
+ 
++#define leXX_to_cpu(t, r)						\
++({									\
++	__typeof__(t) v;						\
++	switch (sizeof(t)) {						\
++	case 4: v = le32_to_cpu(r); break;				\
++	case 2: v = le16_to_cpu(r); break;				\
++	case 1:	v = r; break;						\
++	default:							\
++		BUILD_BUG(); break;					\
++	}								\
++	v;								\
++})
++
+ /* Verify next sizeof(t) bytes can be on the same instruction */
+ #define validate_next(t, insn, n)	\
+ 	((insn)->next_byte + sizeof(t) + n <= (insn)->end_kaddr)
+ 
+ #define __get_next(t, insn)	\
+-	({ t r = *(t*)insn->next_byte; insn->next_byte += sizeof(t); r; })
++	({ t r = *(t*)insn->next_byte; insn->next_byte += sizeof(t); leXX_to_cpu(t, r); })
+ 
+ #define __peek_nbyte_next(t, insn, n)	\
+-	({ t r = *(t*)((insn)->next_byte + n); r; })
++	({ t r = *(t*)((insn)->next_byte + n); leXX_to_cpu(t, r); })
+ 
+ #define get_next(t, insn)	\
+ 	({ if (unlikely(!validate_next(t, insn, 0))) goto err_out; __get_next(t, insn); })
+@@ -157,8 +171,7 @@ void insn_get_prefixes(struct insn *insn)
+ 		b = peek_next(insn_byte_t, insn);
+ 		attr = inat_get_opcode_attribute(b);
+ 		if (inat_is_rex_prefix(attr)) {
+-			insn->rex_prefix.value = b;
+-			insn->rex_prefix.nbytes = 1;
++			insn_field_set(&insn->rex_prefix, b, 1);
+ 			insn->next_byte++;
+ 			if (X86_REX_W(b))
+ 				/* REX.W overrides opnd_size */
+@@ -295,8 +308,7 @@ void insn_get_modrm(struct insn *insn)
+ 
+ 	if (inat_has_modrm(insn->attr)) {
+ 		mod = get_next(insn_byte_t, insn);
+-		modrm->value = mod;
+-		modrm->nbytes = 1;
++		insn_field_set(modrm, mod, 1);
+ 		if (inat_is_group(insn->attr)) {
+ 			pfx_id = insn_last_prefix_id(insn);
+ 			insn->attr = inat_get_group_attribute(mod, pfx_id,
+@@ -334,7 +346,7 @@ int insn_rip_relative(struct insn *insn)
+ 	 * For rip-relative instructions, the mod field (top 2 bits)
+ 	 * is zero and the r/m field (bottom 3 bits) is 0x5.
+ 	 */
+-	return (modrm->nbytes && (modrm->value & 0xc7) == 0x5);
++	return (modrm->nbytes && (modrm->bytes[0] & 0xc7) == 0x5);
+ }
+ 
+ /**
+@@ -353,11 +365,11 @@ void insn_get_sib(struct insn *insn)
+ 	if (!insn->modrm.got)
+ 		insn_get_modrm(insn);
+ 	if (insn->modrm.nbytes) {
+-		modrm = (insn_byte_t)insn->modrm.value;
++		modrm = insn->modrm.bytes[0];
+ 		if (insn->addr_bytes != 2 &&
+ 		    X86_MODRM_MOD(modrm) != 3 && X86_MODRM_RM(modrm) == 4) {
+-			insn->sib.value = get_next(insn_byte_t, insn);
+-			insn->sib.nbytes = 1;
++			insn_field_set(&insn->sib,
++				       get_next(insn_byte_t, insn), 1);
+ 		}
+ 	}
+ 	insn->sib.got = 1;
+@@ -407,19 +419,18 @@ void insn_get_displacement(struct insn *insn)
+ 		if (mod == 3)
+ 			goto out;
+ 		if (mod == 1) {
+-			insn->displacement.value = get_next(signed char, insn);
+-			insn->displacement.nbytes = 1;
++			insn_field_set(&insn->displacement,
++				       get_next(signed char, insn), 1);
+ 		} else if (insn->addr_bytes == 2) {
+ 			if ((mod == 0 && rm == 6) || mod == 2) {
+-				insn->displacement.value =
+-					 get_next(short, insn);
+-				insn->displacement.nbytes = 2;
++				insn_field_set(&insn->displacement,
++					       get_next(short, insn), 2);
+ 			}
+ 		} else {
+ 			if ((mod == 0 && rm == 5) || mod == 2 ||
+ 			    (mod == 0 && base == 5)) {
+-				insn->displacement.value = get_next(int, insn);
+-				insn->displacement.nbytes = 4;
++				insn_field_set(&insn->displacement,
++					       get_next(int, insn), 4);
+ 			}
+ 		}
+ 	}
+@@ -435,18 +446,14 @@ static int __get_moffset(struct insn *insn)
+ {
+ 	switch (insn->addr_bytes) {
+ 	case 2:
+-		insn->moffset1.value = get_next(short, insn);
+-		insn->moffset1.nbytes = 2;
++		insn_field_set(&insn->moffset1, get_next(short, insn), 2);
+ 		break;
+ 	case 4:
+-		insn->moffset1.value = get_next(int, insn);
+-		insn->moffset1.nbytes = 4;
++		insn_field_set(&insn->moffset1, get_next(int, insn), 4);
+ 		break;
+ 	case 8:
+-		insn->moffset1.value = get_next(int, insn);
+-		insn->moffset1.nbytes = 4;
+-		insn->moffset2.value = get_next(int, insn);
+-		insn->moffset2.nbytes = 4;
++		insn_field_set(&insn->moffset1, get_next(int, insn), 4);
++		insn_field_set(&insn->moffset2, get_next(int, insn), 4);
+ 		break;
+ 	default:	/* opnd_bytes must be modified manually */
+ 		goto err_out;
+@@ -464,13 +471,11 @@ static int __get_immv32(struct insn *insn)
+ {
+ 	switch (insn->opnd_bytes) {
+ 	case 2:
+-		insn->immediate.value = get_next(short, insn);
+-		insn->immediate.nbytes = 2;
++		insn_field_set(&insn->immediate, get_next(short, insn), 2);
+ 		break;
+ 	case 4:
+ 	case 8:
+-		insn->immediate.value = get_next(int, insn);
+-		insn->immediate.nbytes = 4;
++		insn_field_set(&insn->immediate, get_next(int, insn), 4);
+ 		break;
+ 	default:	/* opnd_bytes must be modified manually */
+ 		goto err_out;
+@@ -487,18 +492,15 @@ static int __get_immv(struct insn *insn)
+ {
+ 	switch (insn->opnd_bytes) {
+ 	case 2:
+-		insn->immediate1.value = get_next(short, insn);
+-		insn->immediate1.nbytes = 2;
++		insn_field_set(&insn->immediate1, get_next(short, insn), 2);
+ 		break;
+ 	case 4:
+-		insn->immediate1.value = get_next(int, insn);
++		insn_field_set(&insn->immediate1, get_next(int, insn), 4);
+ 		insn->immediate1.nbytes = 4;
+ 		break;
+ 	case 8:
+-		insn->immediate1.value = get_next(int, insn);
+-		insn->immediate1.nbytes = 4;
+-		insn->immediate2.value = get_next(int, insn);
+-		insn->immediate2.nbytes = 4;
++		insn_field_set(&insn->immediate1, get_next(int, insn), 4);
++		insn_field_set(&insn->immediate2, get_next(int, insn), 4);
+ 		break;
+ 	default:	/* opnd_bytes must be modified manually */
+ 		goto err_out;
+@@ -515,12 +517,10 @@ static int __get_immptr(struct insn *insn)
+ {
+ 	switch (insn->opnd_bytes) {
+ 	case 2:
+-		insn->immediate1.value = get_next(short, insn);
+-		insn->immediate1.nbytes = 2;
++		insn_field_set(&insn->immediate1, get_next(short, insn), 2);
+ 		break;
+ 	case 4:
+-		insn->immediate1.value = get_next(int, insn);
+-		insn->immediate1.nbytes = 4;
++		insn_field_set(&insn->immediate1, get_next(int, insn), 4);
+ 		break;
+ 	case 8:
+ 		/* ptr16:64 is not exist (no segment) */
+@@ -528,8 +528,7 @@ static int __get_immptr(struct insn *insn)
+ 	default:	/* opnd_bytes must be modified manually */
+ 		goto err_out;
+ 	}
+-	insn->immediate2.value = get_next(unsigned short, insn);
+-	insn->immediate2.nbytes = 2;
++	insn_field_set(&insn->immediate2, get_next(unsigned short, insn), 2);
+ 	insn->immediate1.got = insn->immediate2.got = 1;
+ 
+ 	return 1;
+@@ -565,22 +564,17 @@ void insn_get_immediate(struct insn *insn)
+ 
+ 	switch (inat_immediate_size(insn->attr)) {
+ 	case INAT_IMM_BYTE:
+-		insn->immediate.value = get_next(signed char, insn);
+-		insn->immediate.nbytes = 1;
++		insn_field_set(&insn->immediate, get_next(signed char, insn), 1);
+ 		break;
+ 	case INAT_IMM_WORD:
+-		insn->immediate.value = get_next(short, insn);
+-		insn->immediate.nbytes = 2;
++		insn_field_set(&insn->immediate, get_next(short, insn), 2);
+ 		break;
+ 	case INAT_IMM_DWORD:
+-		insn->immediate.value = get_next(int, insn);
+-		insn->immediate.nbytes = 4;
++		insn_field_set(&insn->immediate, get_next(int, insn), 4);
+ 		break;
+ 	case INAT_IMM_QWORD:
+-		insn->immediate1.value = get_next(int, insn);
+-		insn->immediate1.nbytes = 4;
+-		insn->immediate2.value = get_next(int, insn);
+-		insn->immediate2.nbytes = 4;
++		insn_field_set(&insn->immediate1, get_next(int, insn), 4);
++		insn_field_set(&insn->immediate2, get_next(int, insn), 4);
+ 		break;
+ 	case INAT_IMM_PTR:
+ 		if (!__get_immptr(insn))
+@@ -599,8 +593,7 @@ void insn_get_immediate(struct insn *insn)
+ 		goto err_out;
+ 	}
+ 	if (inat_has_second_immediate(insn->attr)) {
+-		insn->immediate2.value = get_next(signed char, insn);
+-		insn->immediate2.nbytes = 1;
++		insn_field_set(&insn->immediate2, get_next(signed char, insn), 1);
+ 	}
+ done:
+ 	insn->immediate.got = 1;
+-- 
+2.30.0
+
+From a1a664ece586457e9f7652b0bc5b08386259e358 Mon Sep 17 00:00:00 2001
+From: Martin Schwidefsky <schwidefsky@de.ibm.com>
+Date: Fri, 13 Nov 2020 00:03:26 +0100
+Subject: [PATCH] objtool: Fix reloc generation on big endian cross-compiles
+
+Relocations generated in elf_rebuild_rel[a]_reloc_section() are broken
+if objtool is built and run on a big endian system.
+
+The following errors pop up during x86 cross-compilation:
+
+  x86_64-9.1.0-ld: fs/efivarfs/inode.o: bad reloc symbol index (0x2000000 >= 0x22) for offset 0 in section `.orc_unwind_ip'
+  x86_64-9.1.0-ld: final link failed: bad value
+
+Convert those functions to use gelf_update_rel[a](), similar to what
+elf_write_reloc() does.
+
+Signed-off-by: Martin Schwidefsky <schwidefsky@de.ibm.com>
+Co-developed-by: Vasily Gorbik <gor@linux.ibm.com>
+Signed-off-by: Vasily Gorbik <gor@linux.ibm.com>
+Acked-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Acked-by: Masami Hiramatsu <mhiramat@kernel.org>
+Signed-off-by: Josh Poimboeuf <jpoimboe@redhat.com>
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ tools/objtool/elf.c | 34 +++++++++++++++++++---------------
+ 1 file changed, 19 insertions(+), 15 deletions(-)
+
+diff --git a/tools/objtool/elf.c b/tools/objtool/elf.c
+index be89c741b..c784122b7 100644
+--- a/tools/objtool/elf.c
++++ b/tools/objtool/elf.c
+@@ -855,25 +855,27 @@ static int elf_rebuild_rel_reloc_section(struct section *sec, int nr)
+ {
+ 	struct reloc *reloc;
+ 	int idx = 0, size;
+-	GElf_Rel *relocs;
++	void *buf;
+ 
+ 	/* Allocate a buffer for relocations */
+-	size = nr * sizeof(*relocs);
+-	relocs = malloc(size);
+-	if (!relocs) {
++	size = nr * sizeof(GElf_Rel);
++	buf = malloc(size);
++	if (!buf) {
+ 		perror("malloc");
+ 		return -1;
+ 	}
+ 
+-	sec->data->d_buf = relocs;
++	sec->data->d_buf = buf;
+ 	sec->data->d_size = size;
++	sec->data->d_type = ELF_T_REL;
+ 
+ 	sec->sh.sh_size = size;
+ 
+ 	idx = 0;
+ 	list_for_each_entry(reloc, &sec->reloc_list, list) {
+-		relocs[idx].r_offset = reloc->offset;
+-		relocs[idx].r_info = GELF_R_INFO(reloc->sym->idx, reloc->type);
++		reloc->rel.r_offset = reloc->offset;
++		reloc->rel.r_info = GELF_R_INFO(reloc->sym->idx, reloc->type);
++		gelf_update_rel(sec->data, idx, &reloc->rel);
+ 		idx++;
+ 	}
+ 
+@@ -884,26 +886,28 @@ static int elf_rebuild_rela_reloc_section(struct section *sec, int nr)
+ {
+ 	struct reloc *reloc;
+ 	int idx = 0, size;
+-	GElf_Rela *relocs;
++	void *buf;
+ 
+ 	/* Allocate a buffer for relocations with addends */
+-	size = nr * sizeof(*relocs);
+-	relocs = malloc(size);
+-	if (!relocs) {
++	size = nr * sizeof(GElf_Rela);
++	buf = malloc(size);
++	if (!buf) {
+ 		perror("malloc");
+ 		return -1;
+ 	}
+ 
+-	sec->data->d_buf = relocs;
++	sec->data->d_buf = buf;
+ 	sec->data->d_size = size;
++	sec->data->d_type = ELF_T_RELA;
+ 
+ 	sec->sh.sh_size = size;
+ 
+ 	idx = 0;
+ 	list_for_each_entry(reloc, &sec->reloc_list, list) {
+-		relocs[idx].r_offset = reloc->offset;
+-		relocs[idx].r_addend = reloc->addend;
+-		relocs[idx].r_info = GELF_R_INFO(reloc->sym->idx, reloc->type);
++		reloc->rela.r_offset = reloc->offset;
++		reloc->rela.r_addend = reloc->addend;
++		reloc->rela.r_info = GELF_R_INFO(reloc->sym->idx, reloc->type);
++		gelf_update_rela(sec->data, idx, &reloc->rela);
+ 		idx++;
+ 	}
+ 
+-- 
+2.30.0
+
+From 8bfe273238d77d3cee18e4c03b2f26ae360b5661 Mon Sep 17 00:00:00 2001
+From: Vasily Gorbik <gor@linux.ibm.com>
+Date: Fri, 13 Nov 2020 00:03:29 +0100
+Subject: [PATCH] objtool: Fix x86 orc generation on big endian cross-compiles
+
+Correct objtool orc generation endianness problems to enable fully
+functional x86 cross-compiles on big endian hardware.
+
+Introduce bswap_if_needed() macro, which does a byte swap if target
+endianness doesn't match the host, i.e. cross-compilation for little
+endian on big endian and vice versa.  The macro is used for conversion
+of multi-byte values which are read from / about to be written to a
+target native endianness ELF file.
+
+Signed-off-by: Vasily Gorbik <gor@linux.ibm.com>
+Acked-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Acked-by: Masami Hiramatsu <mhiramat@kernel.org>
+Signed-off-by: Josh Poimboeuf <jpoimboe@redhat.com>
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ arch/x86/include/asm/orc_types.h              | 10 +++++
+ tools/arch/x86/include/asm/orc_types.h        | 10 +++++
+ .../arch/x86/include/arch_endianness.h        |  9 +++++
+ tools/objtool/check.c                         |  5 ++-
+ tools/objtool/endianness.h                    | 38 +++++++++++++++++++
+ tools/objtool/orc_dump.c                      |  5 ++-
+ tools/objtool/orc_gen.c                       |  3 ++
+ tools/objtool/special.c                       |  6 ++-
+ 8 files changed, 80 insertions(+), 6 deletions(-)
+ create mode 100644 tools/objtool/arch/x86/include/arch_endianness.h
+ create mode 100644 tools/objtool/endianness.h
+
+diff --git a/arch/x86/include/asm/orc_types.h b/arch/x86/include/asm/orc_types.h
+index fdbffec4c..5a2baf28a 100644
+--- a/arch/x86/include/asm/orc_types.h
++++ b/arch/x86/include/asm/orc_types.h
+@@ -40,6 +40,8 @@
+ #define ORC_REG_MAX			15
+ 
+ #ifndef __ASSEMBLY__
++#include <asm/byteorder.h>
++
+ /*
+  * This struct is more or less a vastly simplified version of the DWARF Call
+  * Frame Information standard.  It contains only the necessary parts of DWARF
+@@ -51,10 +53,18 @@
+ struct orc_entry {
+ 	s16		sp_offset;
+ 	s16		bp_offset;
++#if defined(__LITTLE_ENDIAN_BITFIELD)
+ 	unsigned	sp_reg:4;
+ 	unsigned	bp_reg:4;
+ 	unsigned	type:2;
+ 	unsigned	end:1;
++#elif defined(__BIG_ENDIAN_BITFIELD)
++	unsigned	bp_reg:4;
++	unsigned	sp_reg:4;
++	unsigned	unused:5;
++	unsigned	end:1;
++	unsigned	type:2;
++#endif
+ } __packed;
+ 
+ #endif /* __ASSEMBLY__ */
+diff --git a/tools/arch/x86/include/asm/orc_types.h b/tools/arch/x86/include/asm/orc_types.h
+index fdbffec4c..5a2baf28a 100644
+--- a/tools/arch/x86/include/asm/orc_types.h
++++ b/tools/arch/x86/include/asm/orc_types.h
+@@ -40,6 +40,8 @@
+ #define ORC_REG_MAX			15
+ 
+ #ifndef __ASSEMBLY__
++#include <asm/byteorder.h>
++
+ /*
+  * This struct is more or less a vastly simplified version of the DWARF Call
+  * Frame Information standard.  It contains only the necessary parts of DWARF
+@@ -51,10 +53,18 @@
+ struct orc_entry {
+ 	s16		sp_offset;
+ 	s16		bp_offset;
++#if defined(__LITTLE_ENDIAN_BITFIELD)
+ 	unsigned	sp_reg:4;
+ 	unsigned	bp_reg:4;
+ 	unsigned	type:2;
+ 	unsigned	end:1;
++#elif defined(__BIG_ENDIAN_BITFIELD)
++	unsigned	bp_reg:4;
++	unsigned	sp_reg:4;
++	unsigned	unused:5;
++	unsigned	end:1;
++	unsigned	type:2;
++#endif
+ } __packed;
+ 
+ #endif /* __ASSEMBLY__ */
+diff --git a/tools/objtool/arch/x86/include/arch_endianness.h b/tools/objtool/arch/x86/include/arch_endianness.h
+new file mode 100644
+index 000000000..7c362527d
+--- /dev/null
++++ b/tools/objtool/arch/x86/include/arch_endianness.h
+@@ -0,0 +1,9 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++#ifndef _ARCH_ENDIANNESS_H
++#define _ARCH_ENDIANNESS_H
++
++#include <endian.h>
++
++#define __TARGET_BYTE_ORDER __LITTLE_ENDIAN
++
++#endif /* _ARCH_ENDIANNESS_H */
+diff --git a/tools/objtool/check.c b/tools/objtool/check.c
+index 270adc38d..8cda0ef06 100644
+--- a/tools/objtool/check.c
++++ b/tools/objtool/check.c
+@@ -13,6 +13,7 @@
+ #include "special.h"
+ #include "warn.h"
+ #include "arch_elf.h"
++#include "endianness.h"
+ 
+ #include <linux/objtool.h>
+ #include <linux/hashtable.h>
+@@ -1435,7 +1436,7 @@ static int read_unwind_hints(struct objtool_file *file)
+ 		cfa = &insn->cfi.cfa;
+ 
+ 		if (hint->type == UNWIND_HINT_TYPE_RET_OFFSET) {
+-			insn->ret_offset = hint->sp_offset;
++			insn->ret_offset = bswap_if_needed(hint->sp_offset);
+ 			continue;
+ 		}
+ 
+@@ -1447,7 +1448,7 @@ static int read_unwind_hints(struct objtool_file *file)
+ 			return -1;
+ 		}
+ 
+-		cfa->offset = hint->sp_offset;
++		cfa->offset = bswap_if_needed(hint->sp_offset);
+ 		insn->cfi.type = hint->type;
+ 		insn->cfi.end = hint->end;
+ 	}
+diff --git a/tools/objtool/endianness.h b/tools/objtool/endianness.h
+new file mode 100644
+index 000000000..ebece3191
+--- /dev/null
++++ b/tools/objtool/endianness.h
+@@ -0,0 +1,38 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++#ifndef _OBJTOOL_ENDIANNESS_H
++#define _OBJTOOL_ENDIANNESS_H
++
++#include <linux/kernel.h>
++#include <endian.h>
++#include "arch_endianness.h"
++
++#ifndef __TARGET_BYTE_ORDER
++#error undefined arch __TARGET_BYTE_ORDER
++#endif
++
++#if __BYTE_ORDER != __TARGET_BYTE_ORDER
++#define __NEED_BSWAP 1
++#else
++#define __NEED_BSWAP 0
++#endif
++
++/*
++ * Does a byte swap if target endianness doesn't match the host, i.e. cross
++ * compilation for little endian on big endian and vice versa.
++ * To be used for multi-byte values conversion, which are read from / about
++ * to be written to a target native endianness ELF file.
++ */
++#define bswap_if_needed(val)						\
++({									\
++	__typeof__(val) __ret;						\
++	switch (sizeof(val)) {						\
++	case 8: __ret = __NEED_BSWAP ? bswap_64(val) : (val); break;	\
++	case 4: __ret = __NEED_BSWAP ? bswap_32(val) : (val); break;	\
++	case 2: __ret = __NEED_BSWAP ? bswap_16(val) : (val); break;	\
++	default:							\
++		BUILD_BUG(); break;					\
++	}								\
++	__ret;								\
++})
++
++#endif /* _OBJTOOL_ENDIANNESS_H */
+diff --git a/tools/objtool/orc_dump.c b/tools/objtool/orc_dump.c
+index 5e6a95368..4e818a22e 100644
+--- a/tools/objtool/orc_dump.c
++++ b/tools/objtool/orc_dump.c
+@@ -8,6 +8,7 @@
+ #include <asm/orc_types.h>
+ #include "objtool.h"
+ #include "warn.h"
++#include "endianness.h"
+ 
+ static const char *reg_name(unsigned int reg)
+ {
+@@ -197,11 +198,11 @@ int orc_dump(const char *_objname)
+ 
+ 		printf(" sp:");
+ 
+-		print_reg(orc[i].sp_reg, orc[i].sp_offset);
++		print_reg(orc[i].sp_reg, bswap_if_needed(orc[i].sp_offset));
+ 
+ 		printf(" bp:");
+ 
+-		print_reg(orc[i].bp_reg, orc[i].bp_offset);
++		print_reg(orc[i].bp_reg, bswap_if_needed(orc[i].bp_offset));
+ 
+ 		printf(" type:%s end:%d\n",
+ 		       orc_type_name(orc[i].type), orc[i].end);
+diff --git a/tools/objtool/orc_gen.c b/tools/objtool/orc_gen.c
+index 9ce68b385..1be7e16b2 100644
+--- a/tools/objtool/orc_gen.c
++++ b/tools/objtool/orc_gen.c
+@@ -11,6 +11,7 @@
+ 
+ #include "check.h"
+ #include "warn.h"
++#include "endianness.h"
+ 
+ int create_orc(struct objtool_file *file)
+ {
+@@ -96,6 +97,8 @@ static int create_orc_entry(struct elf *elf, struct section *u_sec, struct secti
+ 	/* populate ORC data */
+ 	orc = (struct orc_entry *)u_sec->data->d_buf + idx;
+ 	memcpy(orc, o, sizeof(*orc));
++	orc->sp_offset = bswap_if_needed(orc->sp_offset);
++	orc->bp_offset = bswap_if_needed(orc->bp_offset);
+ 
+ 	/* populate reloc for ip */
+ 	reloc = malloc(sizeof(*reloc));
+diff --git a/tools/objtool/special.c b/tools/objtool/special.c
+index 1a2420feb..ab7cb1e13 100644
+--- a/tools/objtool/special.c
++++ b/tools/objtool/special.c
+@@ -15,6 +15,7 @@
+ #include "special.h"
+ #include "warn.h"
+ #include "arch_special.h"
++#include "endianness.h"
+ 
+ struct special_entry {
+ 	const char *sec;
+@@ -77,8 +78,9 @@ static int get_alt_entry(struct elf *elf, struct special_entry *entry,
+ 	if (entry->feature) {
+ 		unsigned short feature;
+ 
+-		feature = *(unsigned short *)(sec->data->d_buf + offset +
+-					      entry->feature);
++		feature = bswap_if_needed(*(unsigned short *)(sec->data->d_buf +
++							      offset +
++							      entry->feature));
+ 		arch_handle_alternative(feature, alt);
+ 	}
+ 
+-- 
+2.30.0
+
+From 7786032e52cb02982a7154993b5d88c9c7a31ba5 Mon Sep 17 00:00:00 2001
+From: Vasily Gorbik <gor@linux.ibm.com>
+Date: Fri, 13 Nov 2020 00:03:32 +0100
+Subject: [PATCH] objtool: Rework header include paths
+
+Currently objtool headers are being included either by their base name
+or included via ../ from a parent directory. In case of a base name usage:
+
+ #include "warn.h"
+ #include "arch_elf.h"
+
+it does not make it apparent from which directory the file comes from.
+To make it slightly better, and actually to avoid name clashes some arch
+specific files have "arch_" suffix. And files from an arch folder have
+to revert to including via ../ e.g:
+ #include "../../elf.h"
+
+With additional architectures support and the code base growth there is
+a need for clearer headers naming scheme for multiple reasons:
+1. to make it instantly obvious where these files come from (objtool
+   itself / objtool arch|generic folders / some other external files),
+2. to avoid name clashes of objtool arch specific headers, potential
+   obtool arch generic headers and the system header files (there is
+   /usr/include/elf.h already),
+3. to avoid ../ includes and improve code readability.
+4. to give a warm fuzzy feeling to developers who are mostly kernel
+   developers and are accustomed to linux kernel headers arranging
+   scheme.
+
+Doesn't this make it instantly obvious where are these files come from?
+
+ #include <objtool/warn.h>
+ #include <arch/elf.h>
+
+And doesn't it look nicer to avoid ugly ../ includes? Which also
+guarantees this is elf.h from the objtool and not /usr/include/elf.h.
+
+ #include <objtool/elf.h>
+
+This patch defines and implements new objtool headers arranging
+scheme. Which is:
+- all generic headers go to include/objtool (similar to include/linux)
+- all arch headers go to arch/$(SRCARCH)/include/arch (to get arch
+  prefix). This is similar to linux arch specific "asm/*" headers but we
+  are not abusing "asm" name and calling it what it is. This also helps
+  to prevent name clashes (arch is not used in system headers or kernel
+  exports).
+
+To bring objtool to this state the following things are done:
+1. current top level tools/objtool/ headers are moved into
+   include/objtool/ subdirectory,
+2. arch specific headers, currently only arch/x86/include/ are moved into
+   arch/x86/include/arch/ and were stripped of "arch_" suffix,
+3. new -I$(srctree)/tools/objtool/include include path to make
+   includes like <objtool/warn.h> possible,
+4. rewriting file includes,
+5. make git not to ignore include/objtool/ subdirectory.
+
+Signed-off-by: Vasily Gorbik <gor@linux.ibm.com>
+Acked-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Acked-by: Masami Hiramatsu <mhiramat@kernel.org>
+Signed-off-by: Josh Poimboeuf <jpoimboe@redhat.com>
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ tools/objtool/.gitignore                         |  2 +-
+ tools/objtool/Makefile                           |  1 +
+ tools/objtool/arch/x86/decode.c                  |  8 ++++----
+ .../arch/x86/include/{ => arch}/cfi_regs.h       |  0
+ .../arch/x86/include/{arch_elf.h => arch/elf.h}  |  0
+ .../{arch_endianness.h => arch/endianness.h}     |  0
+ .../include/{arch_special.h => arch/special.h}   |  0
+ tools/objtool/arch/x86/special.c                 |  4 ++--
+ tools/objtool/builtin-check.c                    |  4 ++--
+ tools/objtool/builtin-orc.c                      |  4 ++--
+ tools/objtool/check.c                            | 16 ++++++++--------
+ tools/objtool/elf.c                              |  6 +++---
+ tools/objtool/{ => include/objtool}/arch.h       |  4 ++--
+ tools/objtool/{ => include/objtool}/builtin.h    |  0
+ tools/objtool/{ => include/objtool}/cfi.h        |  2 +-
+ tools/objtool/{ => include/objtool}/check.h      |  4 ++--
+ tools/objtool/{ => include/objtool}/elf.h        |  0
+ tools/objtool/{ => include/objtool}/endianness.h |  2 +-
+ tools/objtool/{ => include/objtool}/objtool.h    |  2 +-
+ tools/objtool/{ => include/objtool}/special.h    |  4 ++--
+ tools/objtool/{ => include/objtool}/warn.h       |  2 +-
+ tools/objtool/objtool.c                          |  6 +++---
+ tools/objtool/orc_dump.c                         |  6 +++---
+ tools/objtool/orc_gen.c                          |  6 +++---
+ tools/objtool/special.c                          | 10 +++++-----
+ tools/objtool/weak.c                             |  2 +-
+ 26 files changed, 48 insertions(+), 47 deletions(-)
+ rename tools/objtool/arch/x86/include/{ => arch}/cfi_regs.h (100%)
+ rename tools/objtool/arch/x86/include/{arch_elf.h => arch/elf.h} (100%)
+ rename tools/objtool/arch/x86/include/{arch_endianness.h => arch/endianness.h} (100%)
+ rename tools/objtool/arch/x86/include/{arch_special.h => arch/special.h} (100%)
+ rename tools/objtool/{ => include/objtool}/arch.h (96%)
+ rename tools/objtool/{ => include/objtool}/builtin.h (100%)
+ rename tools/objtool/{ => include/objtool}/cfi.h (96%)
+ rename tools/objtool/{ => include/objtool}/check.h (96%)
+ rename tools/objtool/{ => include/objtool}/elf.h (100%)
+ rename tools/objtool/{ => include/objtool}/endianness.h (97%)
+ rename tools/objtool/{ => include/objtool}/objtool.h (96%)
+ rename tools/objtool/{ => include/objtool}/special.h (94%)
+ rename tools/objtool/{ => include/objtool}/warn.h (98%)
+
+diff --git a/tools/objtool/.gitignore b/tools/objtool/.gitignore
+index 45cefda24..14236db36 100644
+--- a/tools/objtool/.gitignore
++++ b/tools/objtool/.gitignore
+@@ -1,4 +1,4 @@
+ # SPDX-License-Identifier: GPL-2.0-only
+ arch/x86/lib/inat-tables.c
+-objtool
++/objtool
+ fixdep
+diff --git a/tools/objtool/Makefile b/tools/objtool/Makefile
+index 5cdb19036..d17929998 100644
+--- a/tools/objtool/Makefile
++++ b/tools/objtool/Makefile
+@@ -27,6 +27,7 @@ all: $(OBJTOOL)
+ INCLUDES := -I$(srctree)/tools/include \
+ 	    -I$(srctree)/tools/arch/$(HOSTARCH)/include/uapi \
+ 	    -I$(srctree)/tools/arch/$(SRCARCH)/include	\
++	    -I$(srctree)/tools/objtool/include \
+ 	    -I$(srctree)/tools/objtool/arch/$(SRCARCH)/include
+ WARNINGS := $(EXTRA_WARNINGS) -Wno-switch-default -Wno-switch-enum -Wno-packed -Wno-nested-externs
+ CFLAGS   := -Werror $(WARNINGS) $(KBUILD_HOSTCFLAGS) -g $(INCLUDES) $(LIBELF_FLAGS)
+diff --git a/tools/objtool/arch/x86/decode.c b/tools/objtool/arch/x86/decode.c
+index cde9c36e4..6baa22732 100644
+--- a/tools/objtool/arch/x86/decode.c
++++ b/tools/objtool/arch/x86/decode.c
+@@ -11,11 +11,11 @@
+ #include "../../../arch/x86/lib/inat.c"
+ #include "../../../arch/x86/lib/insn.c"
+ 
+-#include "../../check.h"
+-#include "../../elf.h"
+-#include "../../arch.h"
+-#include "../../warn.h"
+ #include <asm/orc_types.h>
++#include <objtool/check.h>
++#include <objtool/elf.h>
++#include <objtool/arch.h>
++#include <objtool/warn.h>
+ 
+ static unsigned char op_to_cfi_reg[][2] = {
+ 	{CFI_AX, CFI_R8},
+diff --git a/tools/objtool/arch/x86/include/cfi_regs.h b/tools/objtool/arch/x86/include/arch/cfi_regs.h
+similarity index 100%
+rename from tools/objtool/arch/x86/include/cfi_regs.h
+rename to tools/objtool/arch/x86/include/arch/cfi_regs.h
+diff --git a/tools/objtool/arch/x86/include/arch_elf.h b/tools/objtool/arch/x86/include/arch/elf.h
+similarity index 100%
+rename from tools/objtool/arch/x86/include/arch_elf.h
+rename to tools/objtool/arch/x86/include/arch/elf.h
+diff --git a/tools/objtool/arch/x86/include/arch_endianness.h b/tools/objtool/arch/x86/include/arch/endianness.h
+similarity index 100%
+rename from tools/objtool/arch/x86/include/arch_endianness.h
+rename to tools/objtool/arch/x86/include/arch/endianness.h
+diff --git a/tools/objtool/arch/x86/include/arch_special.h b/tools/objtool/arch/x86/include/arch/special.h
+similarity index 100%
+rename from tools/objtool/arch/x86/include/arch_special.h
+rename to tools/objtool/arch/x86/include/arch/special.h
+diff --git a/tools/objtool/arch/x86/special.c b/tools/objtool/arch/x86/special.c
+index fd4af88c0..b4bd3505f 100644
+--- a/tools/objtool/arch/x86/special.c
++++ b/tools/objtool/arch/x86/special.c
+@@ -1,8 +1,8 @@
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ #include <string.h>
+ 
+-#include "../../special.h"
+-#include "../../builtin.h"
++#include <objtool/special.h>
++#include <objtool/builtin.h>
+ 
+ #define X86_FEATURE_POPCNT (4 * 32 + 23)
+ #define X86_FEATURE_SMAP   (9 * 32 + 20)
+diff --git a/tools/objtool/builtin-check.c b/tools/objtool/builtin-check.c
+index c6d199bfd..f47951e19 100644
+--- a/tools/objtool/builtin-check.c
++++ b/tools/objtool/builtin-check.c
+@@ -15,8 +15,8 @@
+ 
+ #include <subcmd/parse-options.h>
+ #include <string.h>
+-#include "builtin.h"
+-#include "objtool.h"
++#include <objtool/builtin.h>
++#include <objtool/objtool.h>
+ 
+ bool no_fp, no_unreachable, retpoline, module, backtrace, uaccess, stats, validate_dup, vmlinux;
+ 
+diff --git a/tools/objtool/builtin-orc.c b/tools/objtool/builtin-orc.c
+index 7b31121fa..6745f3328 100644
+--- a/tools/objtool/builtin-orc.c
++++ b/tools/objtool/builtin-orc.c
+@@ -13,8 +13,8 @@
+  */
+ 
+ #include <string.h>
+-#include "builtin.h"
+-#include "objtool.h"
++#include <objtool/builtin.h>
++#include <objtool/objtool.h>
+ 
+ static const char *orc_usage[] = {
+ 	"objtool orc generate [<options>] file.o",
+diff --git a/tools/objtool/check.c b/tools/objtool/check.c
+index 8cda0ef06..8976047cb 100644
+--- a/tools/objtool/check.c
++++ b/tools/objtool/check.c
+@@ -6,14 +6,14 @@
+ #include <string.h>
+ #include <stdlib.h>
+ 
+-#include "builtin.h"
+-#include "cfi.h"
+-#include "arch.h"
+-#include "check.h"
+-#include "special.h"
+-#include "warn.h"
+-#include "arch_elf.h"
+-#include "endianness.h"
++#include <arch/elf.h>
++#include <objtool/builtin.h>
++#include <objtool/cfi.h>
++#include <objtool/arch.h>
++#include <objtool/check.h>
++#include <objtool/special.h>
++#include <objtool/warn.h>
++#include <objtool/endianness.h>
+ 
+ #include <linux/objtool.h>
+ #include <linux/hashtable.h>
+diff --git a/tools/objtool/elf.c b/tools/objtool/elf.c
+index c784122b7..43714ecd0 100644
+--- a/tools/objtool/elf.c
++++ b/tools/objtool/elf.c
+@@ -15,10 +15,10 @@
+ #include <string.h>
+ #include <unistd.h>
+ #include <errno.h>
+-#include "builtin.h"
++#include <objtool/builtin.h>
+ 
+-#include "elf.h"
+-#include "warn.h"
++#include <objtool/elf.h>
++#include <objtool/warn.h>
+ 
+ #define MAX_NAME_LEN 128
+ 
+diff --git a/tools/objtool/arch.h b/tools/objtool/include/objtool/arch.h
+similarity index 96%
+rename from tools/objtool/arch.h
+rename to tools/objtool/include/objtool/arch.h
+index 4a84c3081..dc4f503a3 100644
+--- a/tools/objtool/arch.h
++++ b/tools/objtool/include/objtool/arch.h
+@@ -8,8 +8,8 @@
+ 
+ #include <stdbool.h>
+ #include <linux/list.h>
+-#include "objtool.h"
+-#include "cfi.h"
++#include <objtool/objtool.h>
++#include <objtool/cfi.h>
+ 
+ #ifdef INSN_USE_ORC
+ #include <asm/orc_types.h>
+diff --git a/tools/objtool/builtin.h b/tools/objtool/include/objtool/builtin.h
+similarity index 100%
+rename from tools/objtool/builtin.h
+rename to tools/objtool/include/objtool/builtin.h
+diff --git a/tools/objtool/cfi.h b/tools/objtool/include/objtool/cfi.h
+similarity index 96%
+rename from tools/objtool/cfi.h
+rename to tools/objtool/include/objtool/cfi.h
+index c7c59c6a4..fd5cb0bed 100644
+--- a/tools/objtool/cfi.h
++++ b/tools/objtool/include/objtool/cfi.h
+@@ -6,7 +6,7 @@
+ #ifndef _OBJTOOL_CFI_H
+ #define _OBJTOOL_CFI_H
+ 
+-#include "cfi_regs.h"
++#include <arch/cfi_regs.h>
+ 
+ #define CFI_UNDEFINED		-1
+ #define CFI_CFA			-2
+diff --git a/tools/objtool/check.h b/tools/objtool/include/objtool/check.h
+similarity index 96%
+rename from tools/objtool/check.h
+rename to tools/objtool/include/objtool/check.h
+index 5ec00a4b8..bba10968e 100644
+--- a/tools/objtool/check.h
++++ b/tools/objtool/include/objtool/check.h
+@@ -7,8 +7,8 @@
+ #define _CHECK_H
+ 
+ #include <stdbool.h>
+-#include "cfi.h"
+-#include "arch.h"
++#include <objtool/cfi.h>
++#include <objtool/arch.h>
+ 
+ struct insn_state {
+ 	struct cfi_state cfi;
+diff --git a/tools/objtool/elf.h b/tools/objtool/include/objtool/elf.h
+similarity index 100%
+rename from tools/objtool/elf.h
+rename to tools/objtool/include/objtool/elf.h
+diff --git a/tools/objtool/endianness.h b/tools/objtool/include/objtool/endianness.h
+similarity index 97%
+rename from tools/objtool/endianness.h
+rename to tools/objtool/include/objtool/endianness.h
+index ebece3191..10241341e 100644
+--- a/tools/objtool/endianness.h
++++ b/tools/objtool/include/objtool/endianness.h
+@@ -2,9 +2,9 @@
+ #ifndef _OBJTOOL_ENDIANNESS_H
+ #define _OBJTOOL_ENDIANNESS_H
+ 
++#include <arch/endianness.h>
+ #include <linux/kernel.h>
+ #include <endian.h>
+-#include "arch_endianness.h"
+ 
+ #ifndef __TARGET_BYTE_ORDER
+ #error undefined arch __TARGET_BYTE_ORDER
+diff --git a/tools/objtool/objtool.h b/tools/objtool/include/objtool/objtool.h
+similarity index 96%
+rename from tools/objtool/objtool.h
+rename to tools/objtool/include/objtool/objtool.h
+index 4125d4578..32f4cd1da 100644
+--- a/tools/objtool/objtool.h
++++ b/tools/objtool/include/objtool/objtool.h
+@@ -10,7 +10,7 @@
+ #include <linux/list.h>
+ #include <linux/hashtable.h>
+ 
+-#include "elf.h"
++#include <objtool/elf.h>
+ 
+ #define __weak __attribute__((weak))
+ 
+diff --git a/tools/objtool/special.h b/tools/objtool/include/objtool/special.h
+similarity index 94%
+rename from tools/objtool/special.h
+rename to tools/objtool/include/objtool/special.h
+index abddf38ef..8a09f4e9d 100644
+--- a/tools/objtool/special.h
++++ b/tools/objtool/include/objtool/special.h
+@@ -7,8 +7,8 @@
+ #define _SPECIAL_H
+ 
+ #include <stdbool.h>
+-#include "check.h"
+-#include "elf.h"
++#include <objtool/check.h>
++#include <objtool/elf.h>
+ 
+ #define C_JUMP_TABLE_SECTION ".rodata..c_jump_table"
+ 
+diff --git a/tools/objtool/warn.h b/tools/objtool/include/objtool/warn.h
+similarity index 98%
+rename from tools/objtool/warn.h
+rename to tools/objtool/include/objtool/warn.h
+index 7799f60de..d99c4675e 100644
+--- a/tools/objtool/warn.h
++++ b/tools/objtool/include/objtool/warn.h
+@@ -11,7 +11,7 @@
+ #include <sys/types.h>
+ #include <sys/stat.h>
+ #include <fcntl.h>
+-#include "elf.h"
++#include <objtool/elf.h>
+ 
+ extern const char *objname;
+ 
+diff --git a/tools/objtool/objtool.c b/tools/objtool/objtool.c
+index 9df0cd86d..e848feb0a 100644
+--- a/tools/objtool/objtool.c
++++ b/tools/objtool/objtool.c
+@@ -21,9 +21,9 @@
+ #include <subcmd/pager.h>
+ #include <linux/kernel.h>
+ 
+-#include "builtin.h"
+-#include "objtool.h"
+-#include "warn.h"
++#include <objtool/builtin.h>
++#include <objtool/objtool.h>
++#include <objtool/warn.h>
+ 
+ struct cmd_struct {
+ 	const char *name;
+diff --git a/tools/objtool/orc_dump.c b/tools/objtool/orc_dump.c
+index 4e818a22e..c53fae9db 100644
+--- a/tools/objtool/orc_dump.c
++++ b/tools/objtool/orc_dump.c
+@@ -6,9 +6,9 @@
+ #include <unistd.h>
+ #include <linux/objtool.h>
+ #include <asm/orc_types.h>
+-#include "objtool.h"
+-#include "warn.h"
+-#include "endianness.h"
++#include <objtool/objtool.h>
++#include <objtool/warn.h>
++#include <objtool/endianness.h>
+ 
+ static const char *reg_name(unsigned int reg)
+ {
+diff --git a/tools/objtool/orc_gen.c b/tools/objtool/orc_gen.c
+index 1be7e16b2..2e5fb787a 100644
+--- a/tools/objtool/orc_gen.c
++++ b/tools/objtool/orc_gen.c
+@@ -9,9 +9,9 @@
+ #include <linux/objtool.h>
+ #include <asm/orc_types.h>
+ 
+-#include "check.h"
+-#include "warn.h"
+-#include "endianness.h"
++#include <objtool/check.h>
++#include <objtool/warn.h>
++#include <objtool/endianness.h>
+ 
+ int create_orc(struct objtool_file *file)
+ {
+diff --git a/tools/objtool/special.c b/tools/objtool/special.c
+index ab7cb1e13..2c7fbda7b 100644
+--- a/tools/objtool/special.c
++++ b/tools/objtool/special.c
+@@ -11,11 +11,11 @@
+ #include <stdlib.h>
+ #include <string.h>
+ 
+-#include "builtin.h"
+-#include "special.h"
+-#include "warn.h"
+-#include "arch_special.h"
+-#include "endianness.h"
++#include <arch/special.h>
++#include <objtool/builtin.h>
++#include <objtool/special.h>
++#include <objtool/warn.h>
++#include <objtool/endianness.h>
+ 
+ struct special_entry {
+ 	const char *sec;
+diff --git a/tools/objtool/weak.c b/tools/objtool/weak.c
+index 7843e9a7a..f2716827c 100644
+--- a/tools/objtool/weak.c
++++ b/tools/objtool/weak.c
+@@ -7,7 +7,7 @@
+ 
+ #include <stdbool.h>
+ #include <errno.h>
+-#include "objtool.h"
++#include <objtool/objtool.h>
+ 
+ #define UNSUPPORTED(name)						\
+ ({									\
+-- 
+2.30.0
+
+From 5ed934e57e712b676ca62e1904ad672a9fa1505a Mon Sep 17 00:00:00 2001
+From: Vasily Gorbik <gor@linux.ibm.com>
+Date: Fri, 13 Nov 2020 17:09:54 +0100
+Subject: [PATCH] x86/insn: Fix vector instruction decoding on big endian
+ cross-compiles
+
+Running instruction decoder posttest on an s390 host with an x86 target
+with allyesconfig shows errors. Instructions used in a couple of kernel
+objects could not be correctly decoded on big endian system.
+
+  insn_decoder_test: warning: objdump says 6 bytes, but insn_get_length() says 5
+  insn_decoder_test: warning: Found an x86 instruction decoder bug, please report this.
+  insn_decoder_test: warning: ffffffff831eb4e1:    62 d1 fd 48 7f 04 24    vmovdqa64 %zmm0,(%r12)
+  insn_decoder_test: warning: objdump says 7 bytes, but insn_get_length() says 6
+  insn_decoder_test: warning: Found an x86 instruction decoder bug, please report this.
+  insn_decoder_test: warning: ffffffff831eb4e8:    62 51 fd 48 7f 44 24 01         vmovdqa64 %zmm8,0x40(%r12)
+  insn_decoder_test: warning: objdump says 8 bytes, but insn_get_length() says 6
+
+This is because in a few places instruction field bytes are set directly
+with further usage of "value". To address that introduce and use a
+insn_set_byte() helper, which correctly updates "value" on big endian
+systems.
+
+Signed-off-by: Vasily Gorbik <gor@linux.ibm.com>
+Acked-by: Masami Hiramatsu <mhiramat@kernel.org>
+Signed-off-by: Josh Poimboeuf <jpoimboe@redhat.com>
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ arch/x86/include/asm/insn.h       | 12 ++++++++++++
+ arch/x86/lib/insn.c               | 18 +++++++++---------
+ tools/arch/x86/include/asm/insn.h | 12 ++++++++++++
+ tools/arch/x86/lib/insn.c         | 18 +++++++++---------
+ 4 files changed, 42 insertions(+), 18 deletions(-)
+
+diff --git a/arch/x86/include/asm/insn.h b/arch/x86/include/asm/insn.h
+index 090863cfb..95a448fbb 100644
+--- a/arch/x86/include/asm/insn.h
++++ b/arch/x86/include/asm/insn.h
+@@ -30,6 +30,12 @@ static inline void insn_field_set(struct insn_field *p, insn_value_t v,
+ 	p->nbytes = n;
+ }
+ 
++static inline void insn_set_byte(struct insn_field *p, unsigned char n,
++				 insn_byte_t v)
++{
++	p->bytes[n] = v;
++}
++
+ #else
+ 
+ struct insn_field {
+@@ -51,6 +57,12 @@ static inline void insn_field_set(struct insn_field *p, insn_value_t v,
+ 	p->nbytes = n;
+ }
+ 
++static inline void insn_set_byte(struct insn_field *p, unsigned char n,
++				 insn_byte_t v)
++{
++	p->bytes[n] = v;
++	p->value = __le32_to_cpu(p->little);
++}
+ #endif
+ 
+ struct insn {
+diff --git a/arch/x86/lib/insn.c b/arch/x86/lib/insn.c
+index 520b31fc1..435630a6e 100644
+--- a/arch/x86/lib/insn.c
++++ b/arch/x86/lib/insn.c
+@@ -161,9 +161,9 @@ void insn_get_prefixes(struct insn *insn)
+ 			b = insn->prefixes.bytes[3];
+ 			for (i = 0; i < nb; i++)
+ 				if (prefixes->bytes[i] == lb)
+-					prefixes->bytes[i] = b;
++					insn_set_byte(prefixes, i, b);
+ 		}
+-		insn->prefixes.bytes[3] = lb;
++		insn_set_byte(&insn->prefixes, 3, lb);
+ 	}
+ 
+ 	/* Decode REX prefix */
+@@ -194,13 +194,13 @@ void insn_get_prefixes(struct insn *insn)
+ 			if (X86_MODRM_MOD(b2) != 3)
+ 				goto vex_end;
+ 		}
+-		insn->vex_prefix.bytes[0] = b;
+-		insn->vex_prefix.bytes[1] = b2;
++		insn_set_byte(&insn->vex_prefix, 0, b);
++		insn_set_byte(&insn->vex_prefix, 1, b2);
+ 		if (inat_is_evex_prefix(attr)) {
+ 			b2 = peek_nbyte_next(insn_byte_t, insn, 2);
+-			insn->vex_prefix.bytes[2] = b2;
++			insn_set_byte(&insn->vex_prefix, 2, b2);
+ 			b2 = peek_nbyte_next(insn_byte_t, insn, 3);
+-			insn->vex_prefix.bytes[3] = b2;
++			insn_set_byte(&insn->vex_prefix, 3, b2);
+ 			insn->vex_prefix.nbytes = 4;
+ 			insn->next_byte += 4;
+ 			if (insn->x86_64 && X86_VEX_W(b2))
+@@ -208,7 +208,7 @@ void insn_get_prefixes(struct insn *insn)
+ 				insn->opnd_bytes = 8;
+ 		} else if (inat_is_vex3_prefix(attr)) {
+ 			b2 = peek_nbyte_next(insn_byte_t, insn, 2);
+-			insn->vex_prefix.bytes[2] = b2;
++			insn_set_byte(&insn->vex_prefix, 2, b2);
+ 			insn->vex_prefix.nbytes = 3;
+ 			insn->next_byte += 3;
+ 			if (insn->x86_64 && X86_VEX_W(b2))
+@@ -220,7 +220,7 @@ void insn_get_prefixes(struct insn *insn)
+ 			 * Makes it easier to decode vex.W, vex.vvvv,
+ 			 * vex.L and vex.pp. Masking with 0x7f sets vex.W == 0.
+ 			 */
+-			insn->vex_prefix.bytes[2] = b2 & 0x7f;
++			insn_set_byte(&insn->vex_prefix, 2, b2 & 0x7f);
+ 			insn->vex_prefix.nbytes = 2;
+ 			insn->next_byte += 2;
+ 		}
+@@ -256,7 +256,7 @@ void insn_get_opcode(struct insn *insn)
+ 
+ 	/* Get first opcode */
+ 	op = get_next(insn_byte_t, insn);
+-	opcode->bytes[0] = op;
++	insn_set_byte(opcode, 0, op);
+ 	opcode->nbytes = 1;
+ 
+ 	/* Check if there is VEX prefix or not */
+diff --git a/tools/arch/x86/include/asm/insn.h b/tools/arch/x86/include/asm/insn.h
+index c1fab7a57..cc777c185 100644
+--- a/tools/arch/x86/include/asm/insn.h
++++ b/tools/arch/x86/include/asm/insn.h
+@@ -30,6 +30,12 @@ static inline void insn_field_set(struct insn_field *p, insn_value_t v,
+ 	p->nbytes = n;
+ }
+ 
++static inline void insn_set_byte(struct insn_field *p, unsigned char n,
++				 insn_byte_t v)
++{
++	p->bytes[n] = v;
++}
++
+ #else
+ 
+ struct insn_field {
+@@ -51,6 +57,12 @@ static inline void insn_field_set(struct insn_field *p, insn_value_t v,
+ 	p->nbytes = n;
+ }
+ 
++static inline void insn_set_byte(struct insn_field *p, unsigned char n,
++				 insn_byte_t v)
++{
++	p->bytes[n] = v;
++	p->value = __le32_to_cpu(p->little);
++}
+ #endif
+ 
+ struct insn {
+diff --git a/tools/arch/x86/lib/insn.c b/tools/arch/x86/lib/insn.c
+index 77e92aa52..3d9355ed1 100644
+--- a/tools/arch/x86/lib/insn.c
++++ b/tools/arch/x86/lib/insn.c
+@@ -161,9 +161,9 @@ void insn_get_prefixes(struct insn *insn)
+ 			b = insn->prefixes.bytes[3];
+ 			for (i = 0; i < nb; i++)
+ 				if (prefixes->bytes[i] == lb)
+-					prefixes->bytes[i] = b;
++					insn_set_byte(prefixes, i, b);
+ 		}
+-		insn->prefixes.bytes[3] = lb;
++		insn_set_byte(&insn->prefixes, 3, lb);
+ 	}
+ 
+ 	/* Decode REX prefix */
+@@ -194,13 +194,13 @@ void insn_get_prefixes(struct insn *insn)
+ 			if (X86_MODRM_MOD(b2) != 3)
+ 				goto vex_end;
+ 		}
+-		insn->vex_prefix.bytes[0] = b;
+-		insn->vex_prefix.bytes[1] = b2;
++		insn_set_byte(&insn->vex_prefix, 0, b);
++		insn_set_byte(&insn->vex_prefix, 1, b2);
+ 		if (inat_is_evex_prefix(attr)) {
+ 			b2 = peek_nbyte_next(insn_byte_t, insn, 2);
+-			insn->vex_prefix.bytes[2] = b2;
++			insn_set_byte(&insn->vex_prefix, 2, b2);
+ 			b2 = peek_nbyte_next(insn_byte_t, insn, 3);
+-			insn->vex_prefix.bytes[3] = b2;
++			insn_set_byte(&insn->vex_prefix, 3, b2);
+ 			insn->vex_prefix.nbytes = 4;
+ 			insn->next_byte += 4;
+ 			if (insn->x86_64 && X86_VEX_W(b2))
+@@ -208,7 +208,7 @@ void insn_get_prefixes(struct insn *insn)
+ 				insn->opnd_bytes = 8;
+ 		} else if (inat_is_vex3_prefix(attr)) {
+ 			b2 = peek_nbyte_next(insn_byte_t, insn, 2);
+-			insn->vex_prefix.bytes[2] = b2;
++			insn_set_byte(&insn->vex_prefix, 2, b2);
+ 			insn->vex_prefix.nbytes = 3;
+ 			insn->next_byte += 3;
+ 			if (insn->x86_64 && X86_VEX_W(b2))
+@@ -220,7 +220,7 @@ void insn_get_prefixes(struct insn *insn)
+ 			 * Makes it easier to decode vex.W, vex.vvvv,
+ 			 * vex.L and vex.pp. Masking with 0x7f sets vex.W == 0.
+ 			 */
+-			insn->vex_prefix.bytes[2] = b2 & 0x7f;
++			insn_set_byte(&insn->vex_prefix, 2, b2 & 0x7f);
+ 			insn->vex_prefix.nbytes = 2;
+ 			insn->next_byte += 2;
+ 		}
+@@ -256,7 +256,7 @@ void insn_get_opcode(struct insn *insn)
+ 
+ 	/* Get first opcode */
+ 	op = get_next(insn_byte_t, insn);
+-	opcode->bytes[0] = op;
++	insn_set_byte(opcode, 0, op);
+ 	opcode->nbytes = 1;
+ 
+ 	/* Check if there is VEX prefix or not */
+-- 
+2.30.0
+
+From ab4e0744e99b87e1a223e89fc3c9ae44f727c9a6 Mon Sep 17 00:00:00 2001
+From: Josh Poimboeuf <jpoimboe@redhat.com>
+Date: Thu, 17 Dec 2020 15:02:42 -0600
+Subject: [PATCH] objtool: Refactor ORC section generation
+
+Decouple ORC entries from instructions.  This simplifies the
+control/data flow, and is going to make it easier to support alternative
+instructions which change the stack layout.
+
+Signed-off-by: Josh Poimboeuf <jpoimboe@redhat.com>
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ tools/objtool/Makefile                  |   4 -
+ tools/objtool/builtin-orc.c             |   6 +-
+ tools/objtool/include/objtool/arch.h    |   4 -
+ tools/objtool/include/objtool/check.h   |   3 -
+ tools/objtool/include/objtool/objtool.h |   3 +-
+ tools/objtool/orc_gen.c                 | 272 ++++++++++++------------
+ tools/objtool/weak.c                    |   7 +-
+ 7 files changed, 140 insertions(+), 159 deletions(-)
+
+diff --git a/tools/objtool/Makefile b/tools/objtool/Makefile
+index d17929998..92ce4fce7 100644
+--- a/tools/objtool/Makefile
++++ b/tools/objtool/Makefile
+@@ -47,10 +47,6 @@ ifeq ($(SRCARCH),x86)
+ 	SUBCMD_ORC := y
+ endif
+ 
+-ifeq ($(SUBCMD_ORC),y)
+-	CFLAGS += -DINSN_USE_ORC
+-endif
+-
+ export SUBCMD_CHECK SUBCMD_ORC
+ export srctree OUTPUT CFLAGS SRCARCH AWK
+ include $(srctree)/tools/build/Makefile.include
+diff --git a/tools/objtool/builtin-orc.c b/tools/objtool/builtin-orc.c
+index 6745f3328..8273bbf7c 100644
+--- a/tools/objtool/builtin-orc.c
++++ b/tools/objtool/builtin-orc.c
+@@ -51,11 +51,7 @@ int cmd_orc(int argc, const char **argv)
+ 		if (list_empty(&file->insn_list))
+ 			return 0;
+ 
+-		ret = create_orc(file);
+-		if (ret)
+-			return ret;
+-
+-		ret = create_orc_sections(file);
++		ret = orc_create(file);
+ 		if (ret)
+ 			return ret;
+ 
+diff --git a/tools/objtool/include/objtool/arch.h b/tools/objtool/include/objtool/arch.h
+index dc4f503a3..6ff0685f5 100644
+--- a/tools/objtool/include/objtool/arch.h
++++ b/tools/objtool/include/objtool/arch.h
+@@ -11,10 +11,6 @@
+ #include <objtool/objtool.h>
+ #include <objtool/cfi.h>
+ 
+-#ifdef INSN_USE_ORC
+-#include <asm/orc_types.h>
+-#endif
+-
+ enum insn_type {
+ 	INSN_JUMP_CONDITIONAL,
+ 	INSN_JUMP_UNCONDITIONAL,
+diff --git a/tools/objtool/include/objtool/check.h b/tools/objtool/include/objtool/check.h
+index bba10968e..df1e3e8ed 100644
+--- a/tools/objtool/include/objtool/check.h
++++ b/tools/objtool/include/objtool/check.h
+@@ -43,9 +43,6 @@ struct instruction {
+ 	struct symbol *func;
+ 	struct list_head stack_ops;
+ 	struct cfi_state cfi;
+-#ifdef INSN_USE_ORC
+-	struct orc_entry orc;
+-#endif
+ };
+ 
+ static inline bool is_static_jump(struct instruction *insn)
+diff --git a/tools/objtool/include/objtool/objtool.h b/tools/objtool/include/objtool/objtool.h
+index 32f4cd1da..e114642ef 100644
+--- a/tools/objtool/include/objtool/objtool.h
++++ b/tools/objtool/include/objtool/objtool.h
+@@ -26,7 +26,6 @@ struct objtool_file *objtool_open_read(const char *_objname);
+ 
+ int check(struct objtool_file *file);
+ int orc_dump(const char *objname);
+-int create_orc(struct objtool_file *file);
+-int create_orc_sections(struct objtool_file *file);
++int orc_create(struct objtool_file *file);
+ 
+ #endif /* _OBJTOOL_H */
+diff --git a/tools/objtool/orc_gen.c b/tools/objtool/orc_gen.c
+index 2e5fb787a..38e1a8dbf 100644
+--- a/tools/objtool/orc_gen.c
++++ b/tools/objtool/orc_gen.c
+@@ -13,89 +13,84 @@
+ #include <objtool/warn.h>
+ #include <objtool/endianness.h>
+ 
+-int create_orc(struct objtool_file *file)
++static int init_orc_entry(struct orc_entry *orc, struct cfi_state *cfi)
+ {
+-	struct instruction *insn;
++	struct instruction *insn = container_of(cfi, struct instruction, cfi);
++	struct cfi_reg *bp = &cfi->regs[CFI_BP];
+ 
+-	for_each_insn(file, insn) {
+-		struct orc_entry *orc = &insn->orc;
+-		struct cfi_reg *cfa = &insn->cfi.cfa;
+-		struct cfi_reg *bp = &insn->cfi.regs[CFI_BP];
++	memset(orc, 0, sizeof(*orc));
+ 
+-		if (!insn->sec->text)
+-			continue;
+-
+-		orc->end = insn->cfi.end;
++	orc->end = cfi->end;
+ 
+-		if (cfa->base == CFI_UNDEFINED) {
+-			orc->sp_reg = ORC_REG_UNDEFINED;
+-			continue;
+-		}
+-
+-		switch (cfa->base) {
+-		case CFI_SP:
+-			orc->sp_reg = ORC_REG_SP;
+-			break;
+-		case CFI_SP_INDIRECT:
+-			orc->sp_reg = ORC_REG_SP_INDIRECT;
+-			break;
+-		case CFI_BP:
+-			orc->sp_reg = ORC_REG_BP;
+-			break;
+-		case CFI_BP_INDIRECT:
+-			orc->sp_reg = ORC_REG_BP_INDIRECT;
+-			break;
+-		case CFI_R10:
+-			orc->sp_reg = ORC_REG_R10;
+-			break;
+-		case CFI_R13:
+-			orc->sp_reg = ORC_REG_R13;
+-			break;
+-		case CFI_DI:
+-			orc->sp_reg = ORC_REG_DI;
+-			break;
+-		case CFI_DX:
+-			orc->sp_reg = ORC_REG_DX;
+-			break;
+-		default:
+-			WARN_FUNC("unknown CFA base reg %d",
+-				  insn->sec, insn->offset, cfa->base);
+-			return -1;
+-		}
++	if (cfi->cfa.base == CFI_UNDEFINED) {
++		orc->sp_reg = ORC_REG_UNDEFINED;
++		return 0;
++	}
+ 
+-		switch(bp->base) {
+-		case CFI_UNDEFINED:
+-			orc->bp_reg = ORC_REG_UNDEFINED;
+-			break;
+-		case CFI_CFA:
+-			orc->bp_reg = ORC_REG_PREV_SP;
+-			break;
+-		case CFI_BP:
+-			orc->bp_reg = ORC_REG_BP;
+-			break;
+-		default:
+-			WARN_FUNC("unknown BP base reg %d",
+-				  insn->sec, insn->offset, bp->base);
+-			return -1;
+-		}
++	switch (cfi->cfa.base) {
++	case CFI_SP:
++		orc->sp_reg = ORC_REG_SP;
++		break;
++	case CFI_SP_INDIRECT:
++		orc->sp_reg = ORC_REG_SP_INDIRECT;
++		break;
++	case CFI_BP:
++		orc->sp_reg = ORC_REG_BP;
++		break;
++	case CFI_BP_INDIRECT:
++		orc->sp_reg = ORC_REG_BP_INDIRECT;
++		break;
++	case CFI_R10:
++		orc->sp_reg = ORC_REG_R10;
++		break;
++	case CFI_R13:
++		orc->sp_reg = ORC_REG_R13;
++		break;
++	case CFI_DI:
++		orc->sp_reg = ORC_REG_DI;
++		break;
++	case CFI_DX:
++		orc->sp_reg = ORC_REG_DX;
++		break;
++	default:
++		WARN_FUNC("unknown CFA base reg %d",
++			  insn->sec, insn->offset, cfi->cfa.base);
++		return -1;
++	}
+ 
+-		orc->sp_offset = cfa->offset;
+-		orc->bp_offset = bp->offset;
+-		orc->type = insn->cfi.type;
++	switch (bp->base) {
++	case CFI_UNDEFINED:
++		orc->bp_reg = ORC_REG_UNDEFINED;
++		break;
++	case CFI_CFA:
++		orc->bp_reg = ORC_REG_PREV_SP;
++		break;
++	case CFI_BP:
++		orc->bp_reg = ORC_REG_BP;
++		break;
++	default:
++		WARN_FUNC("unknown BP base reg %d",
++			  insn->sec, insn->offset, bp->base);
++		return -1;
+ 	}
+ 
++	orc->sp_offset = cfi->cfa.offset;
++	orc->bp_offset = bp->offset;
++	orc->type = cfi->type;
++
+ 	return 0;
+ }
+ 
+-static int create_orc_entry(struct elf *elf, struct section *u_sec, struct section *ip_relocsec,
+-				unsigned int idx, struct section *insn_sec,
+-				unsigned long insn_off, struct orc_entry *o)
++static int write_orc_entry(struct elf *elf, struct section *orc_sec,
++			   struct section *ip_rsec, unsigned int idx,
++			   struct section *insn_sec, unsigned long insn_off,
++			   struct orc_entry *o)
+ {
+ 	struct orc_entry *orc;
+ 	struct reloc *reloc;
+ 
+ 	/* populate ORC data */
+-	orc = (struct orc_entry *)u_sec->data->d_buf + idx;
++	orc = (struct orc_entry *)orc_sec->data->d_buf + idx;
+ 	memcpy(orc, o, sizeof(*orc));
+ 	orc->sp_offset = bswap_if_needed(orc->sp_offset);
+ 	orc->bp_offset = bswap_if_needed(orc->bp_offset);
+@@ -117,102 +112,109 @@ static int create_orc_entry(struct elf *elf, struct section *u_sec, struct secti
+ 
+ 	reloc->type = R_X86_64_PC32;
+ 	reloc->offset = idx * sizeof(int);
+-	reloc->sec = ip_relocsec;
++	reloc->sec = ip_rsec;
+ 
+ 	elf_add_reloc(elf, reloc);
+ 
+ 	return 0;
+ }
+ 
+-int create_orc_sections(struct objtool_file *file)
++struct orc_list_entry {
++	struct list_head list;
++	struct orc_entry orc;
++	struct section *insn_sec;
++	unsigned long insn_off;
++};
++
++static int orc_list_add(struct list_head *orc_list, struct orc_entry *orc,
++			struct section *sec, unsigned long offset)
++{
++	struct orc_list_entry *entry = malloc(sizeof(*entry));
++
++	if (!entry) {
++		WARN("malloc failed");
++		return -1;
++	}
++
++	entry->orc	= *orc;
++	entry->insn_sec = sec;
++	entry->insn_off = offset;
++
++	list_add_tail(&entry->list, orc_list);
++	return 0;
++}
++
++int orc_create(struct objtool_file *file)
+ {
+-	struct instruction *insn, *prev_insn;
+-	struct section *sec, *u_sec, *ip_relocsec;
+-	unsigned int idx;
++	struct section *sec, *ip_rsec, *orc_sec;
++	unsigned int nr = 0, idx = 0;
++	struct orc_list_entry *entry;
++	struct list_head orc_list;
+ 
+-	struct orc_entry empty = {
+-		.sp_reg = ORC_REG_UNDEFINED,
++	struct orc_entry null = {
++		.sp_reg  = ORC_REG_UNDEFINED,
+ 		.bp_reg  = ORC_REG_UNDEFINED,
+ 		.type    = UNWIND_HINT_TYPE_CALL,
+ 	};
+ 
+-	sec = find_section_by_name(file->elf, ".orc_unwind");
+-	if (sec) {
+-		WARN("file already has .orc_unwind section, skipping");
+-		return -1;
+-	}
+-
+-	/* count the number of needed orcs */
+-	idx = 0;
++	/* Build a deduplicated list of ORC entries: */
++	INIT_LIST_HEAD(&orc_list);
+ 	for_each_sec(file, sec) {
++		struct orc_entry orc, prev_orc = {0};
++		struct instruction *insn;
++		bool empty = true;
++
+ 		if (!sec->text)
+ 			continue;
+ 
+-		prev_insn = NULL;
+ 		sec_for_each_insn(file, sec, insn) {
+-			if (!prev_insn ||
+-			    memcmp(&insn->orc, &prev_insn->orc,
+-				   sizeof(struct orc_entry))) {
+-				idx++;
+-			}
+-			prev_insn = insn;
++			if (init_orc_entry(&orc, &insn->cfi))
++				return -1;
++			if (!memcmp(&prev_orc, &orc, sizeof(orc)))
++				continue;
++			if (orc_list_add(&orc_list, &orc, sec, insn->offset))
++				return -1;
++			nr++;
++			prev_orc = orc;
++			empty = false;
+ 		}
+ 
+-		/* section terminator */
+-		if (prev_insn)
+-			idx++;
++		/* Add a section terminator */
++		if (!empty) {
++			orc_list_add(&orc_list, &null, sec, sec->len);
++			nr++;
++		}
+ 	}
+-	if (!idx)
+-		return -1;
++	if (!nr)
++		return 0;
+ 
++	/* Create .orc_unwind, .orc_unwind_ip and .rela.orc_unwind_ip sections: */
++	sec = find_section_by_name(file->elf, ".orc_unwind");
++	if (sec) {
++		WARN("file already has .orc_unwind section, skipping");
++		return -1;
++	}
++	orc_sec = elf_create_section(file->elf, ".orc_unwind", 0,
++				     sizeof(struct orc_entry), nr);
++	if (!orc_sec)
++		return -1;
+ 
+-	/* create .orc_unwind_ip and .rela.orc_unwind_ip sections */
+-	sec = elf_create_section(file->elf, ".orc_unwind_ip", 0, sizeof(int), idx);
++	sec = elf_create_section(file->elf, ".orc_unwind_ip", 0, sizeof(int), nr);
+ 	if (!sec)
+ 		return -1;
+-
+-	ip_relocsec = elf_create_reloc_section(file->elf, sec, SHT_RELA);
+-	if (!ip_relocsec)
++	ip_rsec = elf_create_reloc_section(file->elf, sec, SHT_RELA);
++	if (!ip_rsec)
+ 		return -1;
+ 
+-	/* create .orc_unwind section */
+-	u_sec = elf_create_section(file->elf, ".orc_unwind", 0,
+-				   sizeof(struct orc_entry), idx);
+-
+-	/* populate sections */
+-	idx = 0;
+-	for_each_sec(file, sec) {
+-		if (!sec->text)
+-			continue;
+-
+-		prev_insn = NULL;
+-		sec_for_each_insn(file, sec, insn) {
+-			if (!prev_insn || memcmp(&insn->orc, &prev_insn->orc,
+-						 sizeof(struct orc_entry))) {
+-
+-				if (create_orc_entry(file->elf, u_sec, ip_relocsec, idx,
+-						     insn->sec, insn->offset,
+-						     &insn->orc))
+-					return -1;
+-
+-				idx++;
+-			}
+-			prev_insn = insn;
+-		}
+-
+-		/* section terminator */
+-		if (prev_insn) {
+-			if (create_orc_entry(file->elf, u_sec, ip_relocsec, idx,
+-					     prev_insn->sec,
+-					     prev_insn->offset + prev_insn->len,
+-					     &empty))
+-				return -1;
+-
+-			idx++;
+-		}
++	/* Write ORC entries to sections: */
++	list_for_each_entry(entry, &orc_list, list) {
++		if (write_orc_entry(file->elf, orc_sec, ip_rsec, idx++,
++				    entry->insn_sec, entry->insn_off,
++				    &entry->orc))
++			return -1;
+ 	}
+ 
+-	if (elf_rebuild_reloc_section(file->elf, ip_relocsec))
++	if (elf_rebuild_reloc_section(file->elf, ip_rsec))
+ 		return -1;
+ 
+ 	return 0;
+diff --git a/tools/objtool/weak.c b/tools/objtool/weak.c
+index f2716827c..8314e824d 100644
+--- a/tools/objtool/weak.c
++++ b/tools/objtool/weak.c
+@@ -25,12 +25,7 @@ int __weak orc_dump(const char *_objname)
+ 	UNSUPPORTED("orc");
+ }
+ 
+-int __weak create_orc(struct objtool_file *file)
+-{
+-	UNSUPPORTED("orc");
+-}
+-
+-int __weak create_orc_sections(struct objtool_file *file)
++int __weak orc_create(struct objtool_file *file)
+ {
+ 	UNSUPPORTED("orc");
+ }
+-- 
+2.30.0
+
+From b23cc71c62747f2e4c3e56138872cf47e1294f8a Mon Sep 17 00:00:00 2001
+From: Josh Poimboeuf <jpoimboe@redhat.com>
+Date: Fri, 18 Dec 2020 14:19:32 -0600
+Subject: [PATCH] objtool: Add 'alt_group' struct
+
+Create a new struct associated with each group of alternatives
+instructions.  This will help with the removal of fake jumps, and more
+importantly with adding support for stack layout changes in
+alternatives.
+
+Signed-off-by: Josh Poimboeuf <jpoimboe@redhat.com>
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ tools/objtool/check.c                 | 29 +++++++++++++++++++++------
+ tools/objtool/include/objtool/check.h | 13 +++++++++++-
+ 2 files changed, 35 insertions(+), 7 deletions(-)
+
+diff --git a/tools/objtool/check.c b/tools/objtool/check.c
+index 8976047cb..9aa324b14 100644
+--- a/tools/objtool/check.c
++++ b/tools/objtool/check.c
+@@ -992,20 +992,28 @@ static int handle_group_alt(struct objtool_file *file,
+ 			    struct instruction *orig_insn,
+ 			    struct instruction **new_insn)
+ {
+-	static unsigned int alt_group_next_index = 1;
+ 	struct instruction *last_orig_insn, *last_new_insn, *insn, *fake_jump = NULL;
+-	unsigned int alt_group = alt_group_next_index++;
++	struct alt_group *orig_alt_group, *new_alt_group;
+ 	unsigned long dest_off;
+ 
++
++	orig_alt_group = malloc(sizeof(*orig_alt_group));
++	if (!orig_alt_group) {
++		WARN("malloc failed");
++		return -1;
++	}
+ 	last_orig_insn = NULL;
+ 	insn = orig_insn;
+ 	sec_for_each_insn_from(file, insn) {
+ 		if (insn->offset >= special_alt->orig_off + special_alt->orig_len)
+ 			break;
+ 
+-		insn->alt_group = alt_group;
++		insn->alt_group = orig_alt_group;
+ 		last_orig_insn = insn;
+ 	}
++	orig_alt_group->orig_group = NULL;
++	orig_alt_group->first_insn = orig_insn;
++	orig_alt_group->last_insn = last_orig_insn;
+ 
+ 	if (next_insn_same_sec(file, last_orig_insn)) {
+ 		fake_jump = malloc(sizeof(*fake_jump));
+@@ -1036,8 +1044,13 @@ static int handle_group_alt(struct objtool_file *file,
+ 		return 0;
+ 	}
+ 
++	new_alt_group = malloc(sizeof(*new_alt_group));
++	if (!new_alt_group) {
++		WARN("malloc failed");
++		return -1;
++	}
++
+ 	last_new_insn = NULL;
+-	alt_group = alt_group_next_index++;
+ 	insn = *new_insn;
+ 	sec_for_each_insn_from(file, insn) {
+ 		struct reloc *alt_reloc;
+@@ -1049,7 +1062,7 @@ static int handle_group_alt(struct objtool_file *file,
+ 
+ 		insn->ignore = orig_insn->ignore_alts;
+ 		insn->func = orig_insn->func;
+-		insn->alt_group = alt_group;
++		insn->alt_group = new_alt_group;
+ 
+ 		/*
+ 		 * Since alternative replacement code is copy/pasted by the
+@@ -1098,6 +1111,10 @@ static int handle_group_alt(struct objtool_file *file,
+ 		return -1;
+ 	}
+ 
++	new_alt_group->orig_group = orig_alt_group;
++	new_alt_group->first_insn = *new_insn;
++	new_alt_group->last_insn = last_new_insn;
++
+ 	if (fake_jump)
+ 		list_add(&fake_jump->list, &last_new_insn->list);
+ 
+@@ -2451,7 +2468,7 @@ static int validate_return(struct symbol *func, struct instruction *insn, struct
+ static void fill_alternative_cfi(struct objtool_file *file, struct instruction *insn)
+ {
+ 	struct instruction *first_insn = insn;
+-	int alt_group = insn->alt_group;
++	struct alt_group *alt_group = insn->alt_group;
+ 
+ 	sec_for_each_insn_continue(file, insn) {
+ 		if (insn->alt_group != alt_group)
+diff --git a/tools/objtool/include/objtool/check.h b/tools/objtool/include/objtool/check.h
+index df1e3e8ed..7893e9783 100644
+--- a/tools/objtool/include/objtool/check.h
++++ b/tools/objtool/include/objtool/check.h
+@@ -19,6 +19,17 @@ struct insn_state {
+ 	s8 instr;
+ };
+ 
++struct alt_group {
++	/*
++	 * Pointer from a replacement group to the original group.  NULL if it
++	 * *is* the original group.
++	 */
++	struct alt_group *orig_group;
++
++	/* First and last instructions in the group */
++	struct instruction *first_insn, *last_insn;
++};
++
+ struct instruction {
+ 	struct list_head list;
+ 	struct hlist_node hash;
+@@ -34,7 +45,7 @@ struct instruction {
+ 	s8 instr;
+ 	u8 visited;
+ 	u8 ret_offset;
+-	int alt_group;
++	struct alt_group *alt_group;
+ 	struct symbol *call_dest;
+ 	struct instruction *jump_dest;
+ 	struct instruction *first_jump_src;
+-- 
+2.30.0
+
+From c9c324dc22aab1687da37001b321b6dfa93a0699 Mon Sep 17 00:00:00 2001
+From: Josh Poimboeuf <jpoimboe@redhat.com>
+Date: Fri, 18 Dec 2020 14:26:21 -0600
+Subject: [PATCH] objtool: Support stack layout changes in alternatives
+
+The ORC unwinder showed a warning [1] which revealed the stack layout
+didn't match what was expected.  The problem was that paravirt patching
+had replaced "CALL *pv_ops.irq.save_fl" with "PUSHF;POP".  That changed
+the stack layout between the PUSHF and the POP, so unwinding from an
+interrupt which occurred between those two instructions would fail.
+
+Part of the agreed upon solution was to rework the custom paravirt
+patching code to use alternatives instead, since objtool already knows
+how to read alternatives (and converging runtime patching infrastructure
+is always a good thing anyway).  But the main problem still remains,
+which is that runtime patching can change the stack layout.
+
+Making stack layout changes in alternatives was disallowed with commit
+7117f16bf460 ("objtool: Fix ORC vs alternatives"), but now that paravirt
+is going to be doing it, it needs to be supported.
+
+One way to do so would be to modify the ORC table when the code gets
+patched.  But ORC is simple -- a good thing! -- and it's best to leave
+it alone.
+
+Instead, support stack layout changes by "flattening" all possible stack
+states (CFI) from parallel alternative code streams into a single set of
+linear states.  The only necessary limitation is that CFI conflicts are
+disallowed at all possible instruction boundaries.
+
+For example, this scenario is allowed:
+
+          Alt1                    Alt2                    Alt3
+
+   0x00   CALL *pv_ops.save_fl    CALL xen_save_fl        PUSHF
+   0x01                                                   POP %RAX
+   0x02                                                   NOP
+   ...
+   0x05                           NOP
+   ...
+   0x07   <insn>
+
+The unwind information for offset-0x00 is identical for all 3
+alternatives.  Similarly offset-0x05 and higher also are identical (and
+the same as 0x00).  However offset-0x01 has deviating CFI, but that is
+only relevant for Alt3, neither of the other alternative instruction
+streams will ever hit that offset.
+
+This scenario is NOT allowed:
+
+          Alt1                    Alt2
+
+   0x00   CALL *pv_ops.save_fl    PUSHF
+   0x01                           NOP6
+   ...
+   0x07   NOP                     POP %RAX
+
+The problem here is that offset-0x7, which is an instruction boundary in
+both possible instruction patch streams, has two conflicting stack
+layouts.
+
+[ The above examples were stolen from Peter Zijlstra. ]
+
+The new flattened CFI array is used both for the detection of conflicts
+(like the second example above) and the generation of linear ORC
+entries.
+
+BTW, another benefit of these changes is that, thanks to some related
+cleanups (new fake nops and alt_group struct) objtool can finally be rid
+of fake jumps, which were a constant source of headaches.
+
+[1] https://lkml.kernel.org/r/20201111170536.arx2zbn4ngvjoov7@treble
+
+Cc: Shinichiro Kawasaki <shinichiro.kawasaki@wdc.com>
+Signed-off-by: Josh Poimboeuf <jpoimboe@redhat.com>
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ .../Documentation/stack-validation.txt        |  16 +-
+ tools/objtool/check.c                         | 192 +++++++++---------
+ tools/objtool/include/objtool/check.h         |   6 +
+ tools/objtool/orc_gen.c                       |  56 ++++-
+ 4 files changed, 159 insertions(+), 111 deletions(-)
+
+diff --git a/tools/objtool/Documentation/stack-validation.txt b/tools/objtool/Documentation/stack-validation.txt
+index 0542e46c7..30f38fdc0 100644
+--- a/tools/objtool/Documentation/stack-validation.txt
++++ b/tools/objtool/Documentation/stack-validation.txt
+@@ -315,13 +315,15 @@ they mean, and suggestions for how to fix them.
+       function tracing inserts additional calls, which is not obvious from the
+       sources).
+ 
+-10. file.o: warning: func()+0x5c: alternative modifies stack
+-
+-    This means that an alternative includes instructions that modify the
+-    stack. The problem is that there is only one ORC unwind table, this means
+-    that the ORC unwind entries must be valid for each of the alternatives.
+-    The easiest way to enforce this is to ensure alternatives do not contain
+-    any ORC entries, which in turn implies the above constraint.
++10. file.o: warning: func()+0x5c: stack layout conflict in alternatives
++
++    This means that in the use of the alternative() or ALTERNATIVE()
++    macro, the code paths have conflicting modifications to the stack.
++    The problem is that there is only one ORC unwind table, which means
++    that the ORC unwind entries must be consistent for all possible
++    instruction boundaries regardless of which code has been patched.
++    This limitation can be overcome by massaging the alternatives with
++    NOPs to shift the stack changes around so they no longer conflict.
+ 
+ 11. file.o: warning: unannotated intra-function call
+ 
+diff --git a/tools/objtool/check.c b/tools/objtool/check.c
+index 9aa324b14..270b507e7 100644
+--- a/tools/objtool/check.c
++++ b/tools/objtool/check.c
+@@ -20,8 +20,6 @@
+ #include <linux/kernel.h>
+ #include <linux/static_call_types.h>
+ 
+-#define FAKE_JUMP_OFFSET -1
+-
+ struct alternative {
+ 	struct list_head list;
+ 	struct instruction *insn;
+@@ -775,9 +773,6 @@ static int add_jump_destinations(struct objtool_file *file)
+ 		if (!is_static_jump(insn))
+ 			continue;
+ 
+-		if (insn->offset == FAKE_JUMP_OFFSET)
+-			continue;
+-
+ 		reloc = find_reloc_by_dest_range(file->elf, insn->sec,
+ 					       insn->offset, insn->len);
+ 		if (!reloc) {
+@@ -971,28 +966,15 @@ static int add_call_destinations(struct objtool_file *file)
+ }
+ 
+ /*
+- * The .alternatives section requires some extra special care, over and above
+- * what other special sections require:
+- *
+- * 1. Because alternatives are patched in-place, we need to insert a fake jump
+- *    instruction at the end so that validate_branch() skips all the original
+- *    replaced instructions when validating the new instruction path.
+- *
+- * 2. An added wrinkle is that the new instruction length might be zero.  In
+- *    that case the old instructions are replaced with noops.  We simulate that
+- *    by creating a fake jump as the only new instruction.
+- *
+- * 3. In some cases, the alternative section includes an instruction which
+- *    conditionally jumps to the _end_ of the entry.  We have to modify these
+- *    jumps' destinations to point back to .text rather than the end of the
+- *    entry in .altinstr_replacement.
++ * The .alternatives section requires some extra special care over and above
++ * other special sections because alternatives are patched in place.
+  */
+ static int handle_group_alt(struct objtool_file *file,
+ 			    struct special_alt *special_alt,
+ 			    struct instruction *orig_insn,
+ 			    struct instruction **new_insn)
+ {
+-	struct instruction *last_orig_insn, *last_new_insn, *insn, *fake_jump = NULL;
++	struct instruction *last_orig_insn, *last_new_insn = NULL, *insn, *nop = NULL;
+ 	struct alt_group *orig_alt_group, *new_alt_group;
+ 	unsigned long dest_off;
+ 
+@@ -1002,6 +984,13 @@ static int handle_group_alt(struct objtool_file *file,
+ 		WARN("malloc failed");
+ 		return -1;
+ 	}
++	orig_alt_group->cfi = calloc(special_alt->orig_len,
++				     sizeof(struct cfi_state *));
++	if (!orig_alt_group->cfi) {
++		WARN("calloc failed");
++		return -1;
++	}
++
+ 	last_orig_insn = NULL;
+ 	insn = orig_insn;
+ 	sec_for_each_insn_from(file, insn) {
+@@ -1015,42 +1004,45 @@ static int handle_group_alt(struct objtool_file *file,
+ 	orig_alt_group->first_insn = orig_insn;
+ 	orig_alt_group->last_insn = last_orig_insn;
+ 
+-	if (next_insn_same_sec(file, last_orig_insn)) {
+-		fake_jump = malloc(sizeof(*fake_jump));
+-		if (!fake_jump) {
+-			WARN("malloc failed");
+-			return -1;
+-		}
+-		memset(fake_jump, 0, sizeof(*fake_jump));
+-		INIT_LIST_HEAD(&fake_jump->alts);
+-		INIT_LIST_HEAD(&fake_jump->stack_ops);
+-		init_cfi_state(&fake_jump->cfi);
+ 
+-		fake_jump->sec = special_alt->new_sec;
+-		fake_jump->offset = FAKE_JUMP_OFFSET;
+-		fake_jump->type = INSN_JUMP_UNCONDITIONAL;
+-		fake_jump->jump_dest = list_next_entry(last_orig_insn, list);
+-		fake_jump->func = orig_insn->func;
++	new_alt_group = malloc(sizeof(*new_alt_group));
++	if (!new_alt_group) {
++		WARN("malloc failed");
++		return -1;
+ 	}
+ 
+-	if (!special_alt->new_len) {
+-		if (!fake_jump) {
+-			WARN("%s: empty alternative at end of section",
+-			     special_alt->orig_sec->name);
++	if (special_alt->new_len < special_alt->orig_len) {
++		/*
++		 * Insert a fake nop at the end to make the replacement
++		 * alt_group the same size as the original.  This is needed to
++		 * allow propagate_alt_cfi() to do its magic.  When the last
++		 * instruction affects the stack, the instruction after it (the
++		 * nop) will propagate the new state to the shared CFI array.
++		 */
++		nop = malloc(sizeof(*nop));
++		if (!nop) {
++			WARN("malloc failed");
+ 			return -1;
+ 		}
++		memset(nop, 0, sizeof(*nop));
++		INIT_LIST_HEAD(&nop->alts);
++		INIT_LIST_HEAD(&nop->stack_ops);
++		init_cfi_state(&nop->cfi);
+ 
+-		*new_insn = fake_jump;
+-		return 0;
++		nop->sec = special_alt->new_sec;
++		nop->offset = special_alt->new_off + special_alt->new_len;
++		nop->len = special_alt->orig_len - special_alt->new_len;
++		nop->type = INSN_NOP;
++		nop->func = orig_insn->func;
++		nop->alt_group = new_alt_group;
++		nop->ignore = orig_insn->ignore_alts;
+ 	}
+ 
+-	new_alt_group = malloc(sizeof(*new_alt_group));
+-	if (!new_alt_group) {
+-		WARN("malloc failed");
+-		return -1;
++	if (!special_alt->new_len) {
++		*new_insn = nop;
++		goto end;
+ 	}
+ 
+-	last_new_insn = NULL;
+ 	insn = *new_insn;
+ 	sec_for_each_insn_from(file, insn) {
+ 		struct reloc *alt_reloc;
+@@ -1089,14 +1081,8 @@ static int handle_group_alt(struct objtool_file *file,
+ 			continue;
+ 
+ 		dest_off = arch_jump_destination(insn);
+-		if (dest_off == special_alt->new_off + special_alt->new_len) {
+-			if (!fake_jump) {
+-				WARN("%s: alternative jump to end of section",
+-				     special_alt->orig_sec->name);
+-				return -1;
+-			}
+-			insn->jump_dest = fake_jump;
+-		}
++		if (dest_off == special_alt->new_off + special_alt->new_len)
++			insn->jump_dest = next_insn_same_sec(file, last_orig_insn);
+ 
+ 		if (!insn->jump_dest) {
+ 			WARN_FUNC("can't find alternative jump destination",
+@@ -1111,13 +1097,13 @@ static int handle_group_alt(struct objtool_file *file,
+ 		return -1;
+ 	}
+ 
++	if (nop)
++		list_add(&nop->list, &last_new_insn->list);
++end:
+ 	new_alt_group->orig_group = orig_alt_group;
+ 	new_alt_group->first_insn = *new_insn;
+-	new_alt_group->last_insn = last_new_insn;
+-
+-	if (fake_jump)
+-		list_add(&fake_jump->list, &last_new_insn->list);
+-
++	new_alt_group->last_insn = nop ? : last_new_insn;
++	new_alt_group->cfi = orig_alt_group->cfi;
+ 	return 0;
+ }
+ 
+@@ -2248,22 +2234,47 @@ static int update_cfi_state(struct instruction *insn, struct cfi_state *cfi,
+ 	return 0;
+ }
+ 
+-static int handle_insn_ops(struct instruction *insn, struct insn_state *state)
++/*
++ * The stack layouts of alternatives instructions can sometimes diverge when
++ * they have stack modifications.  That's fine as long as the potential stack
++ * layouts don't conflict at any given potential instruction boundary.
++ *
++ * Flatten the CFIs of the different alternative code streams (both original
++ * and replacement) into a single shared CFI array which can be used to detect
++ * conflicts and nicely feed a linear array of ORC entries to the unwinder.
++ */
++static int propagate_alt_cfi(struct objtool_file *file, struct instruction *insn)
+ {
+-	struct stack_op *op;
++	struct cfi_state **alt_cfi;
++	int group_off;
+ 
+-	list_for_each_entry(op, &insn->stack_ops, list) {
+-		struct cfi_state old_cfi = state->cfi;
+-		int res;
++	if (!insn->alt_group)
++		return 0;
+ 
+-		res = update_cfi_state(insn, &state->cfi, op);
+-		if (res)
+-			return res;
++	alt_cfi = insn->alt_group->cfi;
++	group_off = insn->offset - insn->alt_group->first_insn->offset;
+ 
+-		if (insn->alt_group && memcmp(&state->cfi, &old_cfi, sizeof(struct cfi_state))) {
+-			WARN_FUNC("alternative modifies stack", insn->sec, insn->offset);
++	if (!alt_cfi[group_off]) {
++		alt_cfi[group_off] = &insn->cfi;
++	} else {
++		if (memcmp(alt_cfi[group_off], &insn->cfi, sizeof(struct cfi_state))) {
++			WARN_FUNC("stack layout conflict in alternatives",
++				  insn->sec, insn->offset);
+ 			return -1;
+ 		}
++	}
++
++	return 0;
++}
++
++static int handle_insn_ops(struct instruction *insn, struct insn_state *state)
++{
++	struct stack_op *op;
++
++	list_for_each_entry(op, &insn->stack_ops, list) {
++
++		if (update_cfi_state(insn, &state->cfi, op))
++			return 1;
+ 
+ 		if (op->dest.type == OP_DEST_PUSHF) {
+ 			if (!state->uaccess_stack) {
+@@ -2453,28 +2464,20 @@ static int validate_return(struct symbol *func, struct instruction *insn, struct
+ 	return 0;
+ }
+ 
+-/*
+- * Alternatives should not contain any ORC entries, this in turn means they
+- * should not contain any CFI ops, which implies all instructions should have
+- * the same same CFI state.
+- *
+- * It is possible to constuct alternatives that have unreachable holes that go
+- * unreported (because they're NOPs), such holes would result in CFI_UNDEFINED
+- * states which then results in ORC entries, which we just said we didn't want.
+- *
+- * Avoid them by copying the CFI entry of the first instruction into the whole
+- * alternative.
+- */
+-static void fill_alternative_cfi(struct objtool_file *file, struct instruction *insn)
++static struct instruction *next_insn_to_validate(struct objtool_file *file,
++						 struct instruction *insn)
+ {
+-	struct instruction *first_insn = insn;
+ 	struct alt_group *alt_group = insn->alt_group;
+ 
+-	sec_for_each_insn_continue(file, insn) {
+-		if (insn->alt_group != alt_group)
+-			break;
+-		insn->cfi = first_insn->cfi;
+-	}
++	/*
++	 * Simulate the fact that alternatives are patched in-place.  When the
++	 * end of a replacement alt_group is reached, redirect objtool flow to
++	 * the end of the original alt_group.
++	 */
++	if (alt_group && insn == alt_group->last_insn && alt_group->orig_group)
++		return next_insn_same_sec(file, alt_group->orig_group->last_insn);
++
++	return next_insn_same_sec(file, insn);
+ }
+ 
+ /*
+@@ -2495,7 +2498,7 @@ static int validate_branch(struct objtool_file *file, struct symbol *func,
+ 	sec = insn->sec;
+ 
+ 	while (1) {
+-		next_insn = next_insn_same_sec(file, insn);
++		next_insn = next_insn_to_validate(file, insn);
+ 
+ 		if (file->c_file && func && insn->func && func != insn->func->pfunc) {
+ 			WARN("%s() falls through to next function %s()",
+@@ -2528,6 +2531,9 @@ static int validate_branch(struct objtool_file *file, struct symbol *func,
+ 
+ 		insn->visited |= visited;
+ 
++		if (propagate_alt_cfi(file, insn))
++			return 1;
++
+ 		if (!insn->ignore_alts && !list_empty(&insn->alts)) {
+ 			bool skip_orig = false;
+ 
+@@ -2543,9 +2549,6 @@ static int validate_branch(struct objtool_file *file, struct symbol *func,
+ 				}
+ 			}
+ 
+-			if (insn->alt_group)
+-				fill_alternative_cfi(file, insn);
+-
+ 			if (skip_orig)
+ 				return 0;
+ 		}
+@@ -2779,9 +2782,6 @@ static bool ignore_unreachable_insn(struct objtool_file *file, struct instructio
+ 	    !strcmp(insn->sec->name, ".altinstr_aux"))
+ 		return true;
+ 
+-	if (insn->type == INSN_JUMP_UNCONDITIONAL && insn->offset == FAKE_JUMP_OFFSET)
+-		return true;
+-
+ 	if (!insn->func)
+ 		return false;
+ 
+diff --git a/tools/objtool/include/objtool/check.h b/tools/objtool/include/objtool/check.h
+index 7893e9783..f4e041fbd 100644
+--- a/tools/objtool/include/objtool/check.h
++++ b/tools/objtool/include/objtool/check.h
+@@ -28,6 +28,12 @@ struct alt_group {
+ 
+ 	/* First and last instructions in the group */
+ 	struct instruction *first_insn, *last_insn;
++
++	/*
++	 * Byte-offset-addressed len-sized array of pointers to CFI structs.
++	 * This is shared with the other alt_groups in the same alternative.
++	 */
++	struct cfi_state **cfi;
+ };
+ 
+ struct instruction {
+diff --git a/tools/objtool/orc_gen.c b/tools/objtool/orc_gen.c
+index 38e1a8dbf..738aa5021 100644
+--- a/tools/objtool/orc_gen.c
++++ b/tools/objtool/orc_gen.c
+@@ -144,6 +144,13 @@ static int orc_list_add(struct list_head *orc_list, struct orc_entry *orc,
+ 	return 0;
+ }
+ 
++static unsigned long alt_group_len(struct alt_group *alt_group)
++{
++	return alt_group->last_insn->offset +
++	       alt_group->last_insn->len -
++	       alt_group->first_insn->offset;
++}
++
+ int orc_create(struct objtool_file *file)
+ {
+ 	struct section *sec, *ip_rsec, *orc_sec;
+@@ -168,15 +175,48 @@ int orc_create(struct objtool_file *file)
+ 			continue;
+ 
+ 		sec_for_each_insn(file, sec, insn) {
+-			if (init_orc_entry(&orc, &insn->cfi))
+-				return -1;
+-			if (!memcmp(&prev_orc, &orc, sizeof(orc)))
++			struct alt_group *alt_group = insn->alt_group;
++			int i;
++
++			if (!alt_group) {
++				if (init_orc_entry(&orc, &insn->cfi))
++					return -1;
++				if (!memcmp(&prev_orc, &orc, sizeof(orc)))
++					continue;
++				if (orc_list_add(&orc_list, &orc, sec,
++						 insn->offset))
++					return -1;
++				nr++;
++				prev_orc = orc;
++				empty = false;
+ 				continue;
+-			if (orc_list_add(&orc_list, &orc, sec, insn->offset))
+-				return -1;
+-			nr++;
+-			prev_orc = orc;
+-			empty = false;
++			}
++
++			/*
++			 * Alternatives can have different stack layout
++			 * possibilities (but they shouldn't conflict).
++			 * Instead of traversing the instructions, use the
++			 * alt_group's flattened byte-offset-addressed CFI
++			 * array.
++			 */
++			for (i = 0; i < alt_group_len(alt_group); i++) {
++				struct cfi_state *cfi = alt_group->cfi[i];
++				if (!cfi)
++					continue;
++				if (init_orc_entry(&orc, cfi))
++					return -1;
++				if (!memcmp(&prev_orc, &orc, sizeof(orc)))
++					continue;
++				if (orc_list_add(&orc_list, &orc, insn->sec,
++						 insn->offset + i))
++					return -1;
++				nr++;
++				prev_orc = orc;
++				empty = false;
++			}
++
++			/* Skip to the end of the alt_group */
++			insn = alt_group->last_insn;
+ 		}
+ 
+ 		/* Add a section terminator */
+-- 
+2.30.0
+

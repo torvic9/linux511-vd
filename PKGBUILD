@@ -208,12 +208,12 @@ prepare() {
 
 build() {
   cd "${srcdir}/linux-${_basekernel}-${_rc}"
-  cp $srcdir/vmlinux.profdata ./
+  # copy pgo profile data
+  # cp $srcdir/vmlinux.profdata ./
   # build!
   make $LLVMOPTS LOCALVERSION= bzImage modules
   # below cmd is for using a pgo profile
   #make $LLVMOPTS KCFLAGS=-fprofile-use=vmlinux.profdata LOCALVERSION= bzImage modules
-  #make $CLANGOPTS -C tools/bootconfig
 }
 
 package_linux511-vd() {
@@ -276,8 +276,6 @@ package_linux511-vd-headers() {
 
   # add objtool for external module building and enabled VALIDATION_STACK option
   install -Dt "${_builddir}/tools/objtool" tools/objtool/objtool
-  # add bootconfig tool
-  #install -Dt "${_builddir}/tools/bootconfig" tools/bootconfig/bootconfig
 
   # add xfs and shmem for aufs building
   mkdir -p "${_builddir}"/{fs/xfs,mm}

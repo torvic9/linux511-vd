@@ -1,6 +1,6 @@
-## vd kernel 5.10 for EndeavourOS, Garuda and Arch
+## vd kernel 5.11 for EndeavourOS, Garuda and Arch
 #### Features:
-- better support for clang with LTO
+- experimental support for clang with LTO and PGO
 - graysky's CPU optimisations
 - Steam futex/fsync patch
 - Patches from SirLucjan's repo

@@ -43,7 +43,7 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     0007-dma-add-support-for-amd-ptdma-controller-driver.patch
     0008-acpi-add-processor-to-the-ignore-PSD-override-list.patch
     0009-x86-set-and-use-cpu_die_id-on-amd-based-systems.patch
-    # sched
+    # tip:sched/core
     0010-tip-sched-core-20210114.patch
     # x86 fixes
     0011-x86-fpu-reduce-unnecessary-FNINIT-and-MXCSR-usage.patch
@@ -51,6 +51,10 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     0012-i2c-nuvoton-nc677x-hwmon-driver-git.patch::https://gitlab.com/CalcProgrammer1/OpenRGB/-/raw/master/OpenRGB.patch
     # kcpuid tool
     0013-tools-x86-add-a-kcpuid-tool-to-show-raw-cpu-features-v4.patch
+    # rcu fixes
+    0014-fix-rcu-priority-boosting.patch
+    # sched idle
+    0015-sched-scan-for-an-idle-sibling-in-a-single-pass.patch
     #
     # futex_wait_multiple
     # 1001-futex-futex_wait_multiple-krisman.patch
@@ -75,6 +79,7 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     # 3002-calcule-59.patch::https://raw.githubusercontent.com/hamadmarri/cacule-cpu-scheduler/master/patches/CacULE/v5.9/cacule5.9.patch
     # MuQSS
     # 3004-ck-muqss-510.patch
+    #
     # pgo profile data
     # vmlinux.profdata
 )
@@ -103,6 +108,8 @@ sha256sums=('c0712caaeff17ece2175b3079052418a5eb6a3c58008e8fa57f448245bdaca7b'
             '36aa4ae85159867ae7c7b70422d2908ee86541d0fc20263c8afc00608bb75d74'
             'e7d724ac15daf428aa1e6a03737e5c1d040892d55fda8a66897fcac9323f285c'
             '080cd03dd1512e70dae5e74b4d9e14feebfd0967382a1ad09bf5416c6fa01de7'
+            '49b29307ee96f85db5949866fd2f5a76502dd5be7564771febfe57c807b4f740'
+            '03022ad0414ee728d1cc51a7b23997beb46d8d7f53ce1773ec94cee198d8fcc1'
             '5dace545bf5047cbac01bc587ee4cf369600ee66b92d9f30f1229c00ae887ffa'
             '7fd689f4ec88364d1ac00007e6f1e273ee9b53cae187e0f70e7f810303dc9303'
             'f7a36231b794022d49e53f464d25e48f2eebf6266c2cbe5756c63aa3bf03bae7'
@@ -123,20 +130,18 @@ _key="$HOME/build/keys/vd511-kernel-key.pem"
 _pubkey="$HOME/build/keys/vd511-kernel-pubkey.pem"
 
 # custom clang path
-# export PATH=/opt/clang12/bin:$PATH
+# export PATH=/opt/clang11/bin:$PATH
 _clang=0
 
 if [[ ${_clang} -eq 1 ]]; then
 	LLVMOPTS="LLVM=1 LLVM_IAS=1"
 	CLANGOPTS="CC=clang LD=ld.lld"
-	source+=(#'9001-objtool-core-jp.patch'
-	'9001-objtool-fixes-jp.patch'
-	'9002-clang-lto-20210114.patch'
+	source+=('9001-objtool-fixes-jp.patch'
+	'9002-clang-lto-20210119.patch'
 	#'9003-clang-pgo-v5.patch'
 	)
-	sha256sums+=(#'4d8f04b860b44bc021bd15796b142647770c45879cde07e5d3e259cadd9318ad'
-	'114bdbce208c4c28a9990ba2727f6f8c9f20ef0d69eb22f7a2c1340db66ccac5'
-	'901788ef69cb70bc3e5174770aa797a4ba74878abcb8695d98e5411b3d9112e8'
+	sha256sums+=('114bdbce208c4c28a9990ba2727f6f8c9f20ef0d69eb22f7a2c1340db66ccac5'
+	'f2fcc01531907c1c0d238e432f91ccb1385cb164d0ce4c39c8fec4a222161a21'
 	#'572787bfd31621947ed965cdd64e912eb76fb7ecd84bc8af94141995ec8ebb0e'
 	)
 else

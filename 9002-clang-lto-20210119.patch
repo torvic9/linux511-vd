@@ -1,4 +1,4 @@
-From 78b720f79ca87776e05fbb151d1d09c22f6077fe Mon Sep 17 00:00:00 2001
+From 14f43a9c4a4cc905822c8b5334c841e03aa51532 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Fri, 25 Sep 2020 16:36:45 -0700
 Subject: [PATCH] tracing: move function tracer options to Kconfig
@@ -21,7 +21,7 @@ Signed-off-by: torvic9 <torvic9@mailbox.org>
  3 files changed, 26 insertions(+), 16 deletions(-)
 
 diff --git a/Makefile b/Makefile
-index 9e73f82e0..ef9ffacbf 100644
+index b0e476773..1a72b0967 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -851,12 +851,8 @@ KBUILD_CFLAGS += $(DEBUG_CFLAGS)
@@ -119,7 +119,7 @@ index 4c058f12d..22654a463 100644
 -- 
 2.30.0
 
-From ae9a806a1f3c2559f7bb48c619b210721c622784 Mon Sep 17 00:00:00 2001
+From 66465f0aa43b3ea056a63a09b7e03acd2bb1fe52 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Fri, 6 Mar 2020 14:14:03 -0800
 Subject: [PATCH] kbuild: add support for Clang LTO
@@ -174,7 +174,7 @@ Signed-off-by: torvic9 <torvic9@mailbox.org>
  7 files changed, 173 insertions(+), 18 deletions(-)
 
 diff --git a/Makefile b/Makefile
-index ef9ffacbf..52a2ddd66 100644
+index 1a72b0967..ff68b9dd9 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -893,6 +893,21 @@ KBUILD_CFLAGS	+= $(CC_FLAGS_SCS)
@@ -504,7 +504,7 @@ index 6eded325c..596507573 100755
 -- 
 2.30.0
 
-From 085213ef697f697ab14b37156f95b264ea701a59 Mon Sep 17 00:00:00 2001
+From d094afa50e2b334dd50516f331e7a875a7c99305 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Fri, 6 Mar 2020 14:19:09 -0800
 Subject: [PATCH] kbuild: lto: fix module versioning
@@ -541,7 +541,7 @@ index d01cda8e1..44e349918 100644
  *.tar
  *.xz
 diff --git a/Makefile b/Makefile
-index 52a2ddd66..7f4d7b9e6 100644
+index ff68b9dd9..6d8a89f8c 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -1837,7 +1837,8 @@ clean: $(clean-dirs)
@@ -727,7 +727,7 @@ index 596507573..78e55fe72 100755
 -- 
 2.30.0
 
-From a3561bc65a140aa18f193d0ac86badfb68b88062 Mon Sep 17 00:00:00 2001
+From 638ad44a1e465284821e790acfa3e43a3f8c9e0f Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Wed, 4 Dec 2019 15:57:39 -0800
 Subject: [PATCH] kbuild: lto: limit inlining
@@ -750,7 +750,7 @@ Signed-off-by: torvic9 <torvic9@mailbox.org>
  1 file changed, 3 insertions(+)
 
 diff --git a/Makefile b/Makefile
-index 7f4d7b9e6..39e843247 100644
+index 6d8a89f8c..51c71ac66 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -901,6 +901,9 @@ else
@@ -766,7 +766,7 @@ index 7f4d7b9e6..39e843247 100644
 -- 
 2.30.0
 
-From 3a93a30f40eee2c38ddf0061be6ae976a74801fa Mon Sep 17 00:00:00 2001
+From e2cd9ac4a073ab7f635bf703373db3631a933f1b Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Tue, 3 Dec 2019 15:56:24 -0800
 Subject: [PATCH] kbuild: lto: merge module sections
@@ -821,7 +821,7 @@ index 69b9b71a6..18d5b8423 100644
 -- 
 2.30.0
 
-From bd6c87977702d8e25edd18a78a93ddf4f48467dd Mon Sep 17 00:00:00 2001
+From 88bc77aece70f90140f016b4bbe6ce7a0c4e0409 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Thu, 10 Dec 2020 11:58:38 -0800
 Subject: [PATCH] kbuild: lto: add a default list of used symbols
@@ -871,7 +871,7 @@ index 000000000..38e7bb9eb
 -- 
 2.30.0
 
-From 0399a5718f27c312d5bb60d459ba26f0fc27e772 Mon Sep 17 00:00:00 2001
+From 2276e4032a60abc8d072ecdfe752dd3eafe78714 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Fri, 8 Dec 2017 15:49:24 -0800
 Subject: [PATCH] init: lto: ensure initcall ordering
@@ -1317,7 +1317,7 @@ index 78e55fe72..c5919d5a0 100755
 -- 
 2.30.0
 
-From dcad7beb26226e369c9730142a803ad8c08226de Mon Sep 17 00:00:00 2001
+From 463f43bec5b8979b8b466a7ac79b3580764da071 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Sun, 22 Mar 2020 17:01:40 -0700
 Subject: [PATCH] init: lto: fix PREL32 relocations
@@ -1396,7 +1396,7 @@ index a57bf0dfd..a01f01c1a 100644
 -- 
 2.30.0
 
-From e20dc9c6591f1a1fe199924108410142b4f0afce Mon Sep 17 00:00:00 2001
+From 85c0714f02216c571f681d60752258c5246fb21d Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Thu, 19 Mar 2020 17:09:17 -0700
 Subject: [PATCH] PCI: Fix PREL32 relocations for LTO
@@ -1457,7 +1457,7 @@ index b32126d26..2354e15a9 100644
 -- 
 2.30.0
 
-From 1fce4f1066c50ce8e9e3686265162d465efadc05 Mon Sep 17 00:00:00 2001
+From 91240ef9a7581cf8a00e7078ee1fd00cc470385f Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Fri, 6 Mar 2020 13:52:03 -0800
 Subject: [PATCH] modpost: lto: strip .lto from module names
@@ -1575,7 +1575,7 @@ index d587f40f1..760e6baa7 100644
 -- 
 2.30.0
 
-From 07faae26285f1a8ed06b9749c3b940449aa5e316 Mon Sep 17 00:00:00 2001
+From b53fbba488ec5e0caa59979d5474cc84b87c5a5b Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Mon, 10 Apr 2017 12:32:24 -0700
 Subject: [PATCH] scripts/mod: disable LTO for empty.c
@@ -1605,7 +1605,7 @@ index 78071681d..c9e38ad93 100644
 -- 
 2.30.0
 
-From b999ccb9b1047ef97929fe705643c90fc22b8069 Mon Sep 17 00:00:00 2001
+From 54a5e296a549a7bcbf92a3e8847efbd320310224 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Mon, 1 May 2017 11:08:05 -0700
 Subject: [PATCH] efi/libstub: disable LTO
@@ -1637,7 +1637,7 @@ index 8a94388e3..c23466e05 100644
 -- 
 2.30.0
 
-From e6aede5ade446bdb2cd19b9fc251354957d73ba3 Mon Sep 17 00:00:00 2001
+From b4bb2db44957c62f6096705ac5fa59cd30ba72ea Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Tue, 5 Dec 2017 12:54:13 -0800
 Subject: [PATCH] drivers/misc/lkdtm: disable LTO for rodata.o
@@ -1667,7 +1667,7 @@ index 6b888d043..aa1209766 100644
 -- 
 2.30.0
 
-From 86bd5f8b9ba208c60fe3753efdd28522990f29e6 Mon Sep 17 00:00:00 2001
+From 73fef3eeaea4b4ee5f8619300bee62fa3e4a2899 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Tue, 19 Dec 2017 08:55:23 -0800
 Subject: [PATCH] arm64: vdso: disable LTO
@@ -1700,7 +1700,7 @@ index cd9c3fa25..47cf442bb 100644
 -- 
 2.30.0
 
-From 2ba4c042a7727d10778a196476a5bacf461a822a Mon Sep 17 00:00:00 2001
+From b102842492742ce417b7022c1c664641a39a3370 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Fri, 25 Sep 2020 12:28:13 -0700
 Subject: [PATCH] arm64: disable recordmcount with DYNAMIC_FTRACE_WITH_REGS
@@ -1724,7 +1724,7 @@ Signed-off-by: torvic9 <torvic9@mailbox.org>
  1 file changed, 2 insertions(+)
 
 diff --git a/arch/arm64/Kconfig b/arch/arm64/Kconfig
-index 05e17351e..d644d975e 100644
+index f39568b28..41bcdce0c 100644
 --- a/arch/arm64/Kconfig
 +++ b/arch/arm64/Kconfig
 @@ -162,6 +162,8 @@ config ARM64
@@ -1739,7 +1739,7 @@ index 05e17351e..d644d975e 100644
 -- 
 2.30.0
 
-From 19da3f896830ca0ef5ebaabf03b571665f81ce15 Mon Sep 17 00:00:00 2001
+From 99857bc1127e93c3031cd22e266595f5a6607a3a Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Thu, 2 Nov 2017 09:34:42 -0700
 Subject: [PATCH] arm64: allow LTO to be selected
@@ -1755,7 +1755,7 @@ Signed-off-by: torvic9 <torvic9@mailbox.org>
  1 file changed, 2 insertions(+)
 
 diff --git a/arch/arm64/Kconfig b/arch/arm64/Kconfig
-index d644d975e..2d3f6d967 100644
+index 41bcdce0c..9a8e889c0 100644
 --- a/arch/arm64/Kconfig
 +++ b/arch/arm64/Kconfig
 @@ -73,6 +73,8 @@ config ARM64
@@ -1770,7 +1770,7 @@ index d644d975e..2d3f6d967 100644
 -- 
 2.30.0
 
-From 175cf4c5e61ad8c766a50534ff07515c0785cd1b Mon Sep 17 00:00:00 2001
+From ed656fb4fc970a6d949a886d574e00fea70376cf Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Wed, 13 Jan 2021 15:23:11 -0800
 Subject: [PATCH] x86/sgx: Fix the return type of sgx_init()
@@ -1837,7 +1837,7 @@ index c519fc5f6..8df81a3ed 100644
 -- 
 2.30.0
 
-From 10eeebe50a3215c7de7731cf850cbdd88efdbc1e Mon Sep 17 00:00:00 2001
+From 26b8beea4735e6c998a43318ac4ecf0f2cdea0fe Mon Sep 17 00:00:00 2001
 From: Arnd Bergmann <arnd@arndb.de>
 Date: Wed, 30 Dec 2020 16:40:40 +0100
 Subject: [PATCH] mm/mremap: fix BUILD_BUG_ON() error in get_extent
@@ -1880,7 +1880,7 @@ index f55432028..aa63bfd3c 100644
 -- 
 2.30.0
 
-From befbfea659cf52e36ecb7042e76d6e9004b92eaf Mon Sep 17 00:00:00 2001
+From e286dbe8b0331940d73c17db60388ab36d539798 Mon Sep 17 00:00:00 2001
 From: Arnd Bergmann <arnd@arndb.de>
 Date: Thu, 7 Jan 2021 23:34:15 +0100
 Subject: [PATCH] x86: efi: avoid BUILD_BUG_ON() for non-constant p4d_index
@@ -1922,7 +1922,7 @@ index e1e8d4e3a..62bb1616b 100644
 -- 
 2.30.0
 
-From 34d1e208f0ca70e10dba2cfdc62f5af6c938ab7a Mon Sep 17 00:00:00 2001
+From 5be72bd96f491d3662ed33f88abfdfc71ab7d40a Mon Sep 17 00:00:00 2001
 From: Peter Zijlstra <peterz@infradead.org>
 Date: Thu, 6 Aug 2020 15:14:09 -0700
 Subject: [PATCH] objtool: Add a pass for generating __mcount_loc
@@ -2128,7 +2128,7 @@ index 4125d4578..cf004dd60 100644
 -- 
 2.30.0
 
-From 571663f53ff2b4ad6290d3214cb9681eb672ea4a Mon Sep 17 00:00:00 2001
+From 5f06356139bf76466d90f18034b1880ac4d4ea94 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Wed, 28 Oct 2020 10:16:26 -0700
 Subject: [PATCH] objtool: Fix __mcount_loc generation with Clang's assembler
@@ -2178,7 +2178,7 @@ index 44e3ee142..ab87fb927 100644
 -- 
 2.30.0
 
-From 4ff49a3e39745cbbb65dfc777d460e206225d99b Mon Sep 17 00:00:00 2001
+From 882de546c9a816bb9d42223df38d3e9fb004d996 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Fri, 17 Jul 2020 12:04:27 -0700
 Subject: [PATCH] objtool: Don't autodetect vmlinux.o
@@ -2236,7 +2236,7 @@ index e92e76f69..facfc10bc 100644
 -- 
 2.30.0
 
-From a17ad2bf6e067b4ca264bcbd282f1e844c66e650 Mon Sep 17 00:00:00 2001
+From 55c872e7e379916dd823ccb48318cd4466c6ca97 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Fri, 25 Sep 2020 16:43:53 -0700
 Subject: [PATCH] tracing: add support for objtool mcount
@@ -2253,7 +2253,7 @@ Signed-off-by: torvic9 <torvic9@mailbox.org>
  3 files changed, 23 insertions(+)
 
 diff --git a/Makefile b/Makefile
-index 39e843247..9cb4e9941 100644
+index 51c71ac66..b4dafe8d1 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -860,6 +860,9 @@ ifdef CONFIG_FTRACE_MCOUNT_USE_CC
@@ -2329,7 +2329,7 @@ index d94fc9ab8..59fabd968 100644
 -- 
 2.30.0
 
-From c021bdcdccc3a033eecd9fa2987c0a9cfa23513f Mon Sep 17 00:00:00 2001
+From 6b948b499b04a7c8a0975641458781787e19d8fb Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Thu, 6 Aug 2020 15:15:02 -0700
 Subject: [PATCH] x86, build: use objtool mcount
@@ -2360,7 +2360,7 @@ index 21f851179..300a9b529 100644
 -- 
 2.30.0
 
-From 955a36fa602984e831550db644d55f74374a9cf2 Mon Sep 17 00:00:00 2001
+From 99038ca623211476434982af2b61bdf4ff44e48c Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Wed, 30 Sep 2020 14:36:59 -0700
 Subject: [PATCH] objtool: Split noinstr validation from --vmlinux
@@ -2442,7 +2442,7 @@ index ab87fb927..85993e606 100644
 -- 
 2.30.0
 
-From 35227cc8d2871aaf2bbb3593ab985b0774f771af Mon Sep 17 00:00:00 2001
+From b2ee71008f43bc2c0d852b0a1bc770abcb572081 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Mon, 13 Apr 2020 16:10:13 -0700
 Subject: [PATCH] kbuild: lto: postpone objtool
@@ -2628,7 +2628,7 @@ index 18aed761f..3b261b0f7 100755
 -- 
 2.30.0
 
-From 09a433be57cbf7013631c6cbac197260483617a5 Mon Sep 17 00:00:00 2001
+From 09c882665497b9254cf7d6063ca0dc57a7cc6310 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Tue, 16 Apr 2019 14:40:00 -0700
 Subject: [PATCH] x86, vdso: disable LTO only for vDSO
@@ -2668,7 +2668,7 @@ index 02e3e42f3..05c4abc2f 100644
 -- 
 2.30.0
 
-From 05a0c39a727544c36bdffb1e7ac55780b2404561 Mon Sep 17 00:00:00 2001
+From f2da22b21a27fd4af9c667cb249259048db932b8 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Wed, 16 Sep 2020 12:57:56 -0700
 Subject: [PATCH] x86, cpu: disable LTO for cpu.c
@@ -2703,7 +2703,7 @@ index 6907b523e..5f711a441 100644
 -- 
 2.30.0
 
-From 32881622e10ef5b87fc143db1ca8ddafb6e1d5a1 Mon Sep 17 00:00:00 2001
+From 402c826aa4fa5d09528537847b1c1b591f700623 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Wed, 10 Apr 2019 14:17:20 -0700
 Subject: [PATCH] x86, build: allow LTO to be selected

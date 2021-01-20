@@ -1348,3 +1348,62 @@ index 213677a5ed33e..9b218afb5cb87 100644
  #
  # Enable address sanitizer flags for kernel except some files or directories
  # we don't want to check (depends on variables KASAN_SANITIZE_obj.o, KASAN_SANITIZE)
+--
+--- a/arch/x86/kernel/cpu/mce/Makefile	2021-01-18 01:37:05.000000000 +0100
++++ b/arch/x86/kernel/cpu/mce/Makefile	2021-01-19 10:04:01.461973974 +0100
+@@ -1,4 +1,7 @@
+ # SPDX-License-Identifier: GPL-2.0
++
++PGO_PROFILE := n
++
+ obj-y				=  core.o severity.o genpool.o
+ 
+ obj-$(CONFIG_X86_ANCIENT_MCE)	+= winchip.o p5.o
+--
+--- a/arch/x86/kvm/Makefile	2021-01-18 01:37:05.000000000 +0100
++++ b/arch/x86/kvm/Makefile	2021-01-19 10:04:52.831974394 +0100
+@@ -1,5 +1,7 @@
+ # SPDX-License-Identifier: GPL-2.0
+ 
++PGO_PROFILE := n
++
+ ccflags-y += -Iarch/x86/kvm
+ ccflags-$(CONFIG_KVM_WERROR) += -Werror
+ 
+--
+--- a/arch/x86/kernel/cpu/Makefile	2021-01-18 01:37:05.000000000 +0100
++++ b/arch/x86/kernel/cpu/Makefile	2021-01-19 11:16:43.212009637 +0100
+@@ -3,6 +3,8 @@
+ # Makefile for x86-compatible CPU details, features and quirks
+ #
+ 
++PGO_PROFILE := n
++
+ # Don't trace early stages of a secondary CPU boot
+ ifdef CONFIG_FUNCTION_TRACER
+ CFLAGS_REMOVE_common.o = -pg
+--
+--- a/arch/x86/kernel/Makefile	2021-01-18 01:37:05.000000000 +0100
++++ b/arch/x86/kernel/Makefile	2021-01-19 12:58:51.002059741 +0100
+@@ -3,6 +3,8 @@
+ # Makefile for the linux kernel.
+ #
+ 
++PGO_PROFILE_cpuid.o := n
++
+ extra-y	:= head_$(BITS).o
+ extra-y	+= head$(BITS).o
+ extra-y	+= ebda.o
+--
+--- a/crypto/Makefile	2021-01-18 01:37:05.000000000 +0100
++++ b/crypto/Makefile	2021-01-19 14:19:14.102099176 +0100
+@@ -3,6 +3,8 @@
+ # Cryptographic API
+ #
+ 
++PGO_PROFILE := n
++
+ obj-$(CONFIG_CRYPTO) += crypto.o
+ crypto-y := api.o cipher.o compress.o memneq.o
+ 
+--

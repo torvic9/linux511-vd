@@ -11,7 +11,7 @@ _kernelname=-vd
 _sub=0
 _rc=rc4
 pkgver=${_basekernel}.${_sub}${_rc}
-pkgrel=1
+pkgrel=2
 _archpatch=20210110
 _prjc="r2"
 _stablequeue=a1028684e3
@@ -75,6 +75,8 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     # 3002-calcule-59.patch::https://raw.githubusercontent.com/hamadmarri/cacule-cpu-scheduler/master/patches/CacULE/v5.9/cacule5.9.patch
     # MuQSS
     # 3004-ck-muqss-510.patch
+    # pgo profile data
+    # vmlinux.profdata
 )
 
 validpgpkeys=(
@@ -130,12 +132,12 @@ if [[ ${_clang} -eq 1 ]]; then
 	source+=(#'9001-objtool-core-jp.patch'
 	'9001-objtool-fixes-jp.patch'
 	'9002-clang-lto-20210114.patch'
-	'9003-clang-pgo-v5.patch'
+	#'9003-clang-pgo-v5.patch'
 	)
 	sha256sums+=(#'4d8f04b860b44bc021bd15796b142647770c45879cde07e5d3e259cadd9318ad'
 	'114bdbce208c4c28a9990ba2727f6f8c9f20ef0d69eb22f7a2c1340db66ccac5'
 	'901788ef69cb70bc3e5174770aa797a4ba74878abcb8695d98e5411b3d9112e8'
-	'1ebf91265aeb82e9733cc5eb6f74941b14fd028beffe93529fcff4de9890a3c6'
+	#'572787bfd31621947ed965cdd64e912eb76fb7ecd84bc8af94141995ec8ebb0e'
 	)
 else
 	LLVMOPTS=""
@@ -206,9 +208,11 @@ prepare() {
 
 build() {
   cd "${srcdir}/linux-${_basekernel}-${_rc}"
-
+  cp $srcdir/vmlinux.profdata ./
   # build!
   make $LLVMOPTS LOCALVERSION= bzImage modules
+  # below cmd is for using a pgo profile
+  #make $LLVMOPTS KCFLAGS=-fprofile-use=vmlinux.profdata LOCALVERSION= bzImage modules
   #make $CLANGOPTS -C tools/bootconfig
 }
 
@@ -243,6 +247,8 @@ package_linux511-vd() {
 
   echo -e "\n${TB}* INSTALLING MODULES${TN}"
   make $CLANGOPTS LOCALVERSION= INSTALL_MOD_PATH="${pkgdir}/usr" INSTALL_MOD_STRIP=1 modules_install
+  # do not strip when building a pgo kernel
+  # make $CLANGOPTS LOCALVERSION= INSTALL_MOD_PATH="${pkgdir}/usr" modules_install
 
   # remove build and source links
   rm $modulesdir/source

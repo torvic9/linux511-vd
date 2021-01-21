@@ -1,6 +1,212 @@
-From patchwork Sat Jan 16 09:43:57 2021
-Date: Sat, 16 Jan 2021 01:43:57 -0800
-Subject: [PATCH v5] pgo: add clang's Profile Guided Optimization
+From 5e6dca82bcaa49348f9e5fcb48df4881f6d6c4ae Mon Sep 17 00:00:00 2001
+From: Nick Desaulniers <ndesaulniers@google.com>
+Date: Tue, 12 Jan 2021 11:46:24 -0800
+Subject: x86/entry: Emit a symbol for register restoring thunk
+
+Arnd found a randconfig that produces the warning:
+
+  arch/x86/entry/thunk_64.o: warning: objtool: missing symbol for insn at
+  offset 0x3e
+
+when building with LLVM_IAS=1 (Clang's integrated assembler). Josh
+notes:
+
+  With the LLVM assembler not generating section symbols, objtool has no
+  way to reference this code when it generates ORC unwinder entries,
+  because this code is outside of any ELF function.
+
+  The limitation now being imposed by objtool is that all code must be
+  contained in an ELF symbol.  And .L symbols don't create such symbols.
+
+  So basically, you can use an .L symbol *inside* a function or a code
+  segment, you just can't use the .L symbol to contain the code using a
+  SYM_*_START/END annotation pair.
+
+Fangrui notes that this optimization is helpful for reducing image size
+when compiling with -ffunction-sections and -fdata-sections. I have
+observed on the order of tens of thousands of symbols for the kernel
+images built with those flags.
+
+A patch has been authored against GNU binutils to match this behavior
+of not generating unused section symbols ([1]), so this will
+also become a problem for users of GNU binutils once they upgrade to 2.36.
+
+Omit the .L prefix on a label so that the assembler will emit an entry
+into the symbol table for the label, with STB_LOCAL binding. This
+enables objtool to generate proper unwind info here with LLVM_IAS=1 or
+GNU binutils 2.36+.
+
+ [ bp: Massage commit message. ]
+
+Reported-by: Arnd Bergmann <arnd@arndb.de>
+Suggested-by: Josh Poimboeuf <jpoimboe@redhat.com>
+Suggested-by: Borislav Petkov <bp@alien8.de>
+Suggested-by: Mark Brown <broonie@kernel.org>
+Signed-off-by: Nick Desaulniers <ndesaulniers@google.com>
+Signed-off-by: Borislav Petkov <bp@suse.de>
+Acked-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Acked-by: Josh Poimboeuf <jpoimboe@redhat.com>
+Link: https://lkml.kernel.org/r/20210112194625.4181814-1-ndesaulniers@google.com
+Link: https://github.com/ClangBuiltLinux/linux/issues/1209
+Link: https://reviews.llvm.org/D93783
+Link: https://sourceware.org/binutils/docs/as/Symbol-Names.html
+Link: https://sourceware.org/git/?p=binutils-gdb.git;a=commit;h=d1bcae833b32f1408485ce69f844dcd7ded093a8 [1]
+---
+ Documentation/asm-annotations.rst | 5 +++++
+ arch/x86/entry/thunk_64.S         | 8 ++++----
+ include/linux/linkage.h           | 5 +++++
+ 3 files changed, 14 insertions(+), 4 deletions(-)
+
+diff --git a/Documentation/asm-annotations.rst b/Documentation/asm-annotations.rst
+index 32ea57483378d..76424e0431f4b 100644
+--- a/Documentation/asm-annotations.rst
++++ b/Documentation/asm-annotations.rst
+@@ -100,6 +100,11 @@ Instruction Macros
+ ~~~~~~~~~~~~~~~~~~
+ This section covers ``SYM_FUNC_*`` and ``SYM_CODE_*`` enumerated above.
+ 
++``objtool`` requires that all code must be contained in an ELF symbol. Symbol
++names that have a ``.L`` prefix do not emit symbol table entries. ``.L``
++prefixed symbols can be used within a code region, but should be avoided for
++denoting a range of code via ``SYM_*_START/END`` annotations.
++
+ * ``SYM_FUNC_START`` and ``SYM_FUNC_START_LOCAL`` are supposed to be **the
+   most frequent markings**. They are used for functions with standard calling
+   conventions -- global and local. Like in C, they both align the functions to
+diff --git a/arch/x86/entry/thunk_64.S b/arch/x86/entry/thunk_64.S
+index ccd32877a3c41..c9a9fbf1655f3 100644
+--- a/arch/x86/entry/thunk_64.S
++++ b/arch/x86/entry/thunk_64.S
+@@ -31,7 +31,7 @@ SYM_FUNC_START_NOALIGN(\name)
+ 	.endif
+ 
+ 	call \func
+-	jmp  .L_restore
++	jmp  __thunk_restore
+ SYM_FUNC_END(\name)
+ 	_ASM_NOKPROBE(\name)
+ 	.endm
+@@ -44,7 +44,7 @@ SYM_FUNC_END(\name)
+ #endif
+ 
+ #ifdef CONFIG_PREEMPTION
+-SYM_CODE_START_LOCAL_NOALIGN(.L_restore)
++SYM_CODE_START_LOCAL_NOALIGN(__thunk_restore)
+ 	popq %r11
+ 	popq %r10
+ 	popq %r9
+@@ -56,6 +56,6 @@ SYM_CODE_START_LOCAL_NOALIGN(.L_restore)
+ 	popq %rdi
+ 	popq %rbp
+ 	ret
+-	_ASM_NOKPROBE(.L_restore)
+-SYM_CODE_END(.L_restore)
++	_ASM_NOKPROBE(__thunk_restore)
++SYM_CODE_END(__thunk_restore)
+ #endif
+diff --git a/include/linux/linkage.h b/include/linux/linkage.h
+index 5bcfbd972e970..dbf8506decca0 100644
+--- a/include/linux/linkage.h
++++ b/include/linux/linkage.h
+@@ -178,6 +178,11 @@
+  * Objtool generates debug info for both FUNC & CODE, but needs special
+  * annotations for each CODE's start (to describe the actual stack frame).
+  *
++ * Objtool requires that all code must be contained in an ELF symbol. Symbol
++ * names that have a  .L prefix do not emit symbol table entries. .L
++ * prefixed symbols can be used within a code region, but should be avoided for
++ * denoting a range of code via ``SYM_*_START/END`` annotations.
++ *
+  * ALIAS -- does not generate debug info -- the aliased function will
+  */
+ 
+-- 
+cgit 1.2.3-1.el7
+
+From ebfac7b778fac8b0e8e92ec91d0b055f046b4604 Mon Sep 17 00:00:00 2001
+From: Fangrui Song <maskray@google.com>
+Date: Fri, 15 Jan 2021 11:52:22 -0800
+Subject: module: Ignore _GLOBAL_OFFSET_TABLE_ when warning for undefined
+ symbols
+
+clang-12 -fno-pic (since
+https://github.com/llvm/llvm-project/commit/a084c0388e2a59b9556f2de0083333232da3f1d6)
+can emit `call __stack_chk_fail@PLT` instead of `call __stack_chk_fail`
+on x86.  The two forms should have identical behaviors on x86-64 but the
+former causes GNU as<2.37 to produce an unreferenced undefined symbol
+_GLOBAL_OFFSET_TABLE_.
+
+(On x86-32, there is an R_386_PC32 vs R_386_PLT32 difference but the
+linker behavior is identical as far as Linux kernel is concerned.)
+
+Simply ignore _GLOBAL_OFFSET_TABLE_ for now, like what
+scripts/mod/modpost.c:ignore_undef_symbol does. This also fixes the
+problem for gcc/clang -fpie and -fpic, which may emit `call foo@PLT` for
+external function calls on x86.
+
+Note: ld -z defs and dynamic loaders do not error for unreferenced
+undefined symbols so the module loader is reading too much.  If we ever
+need to ignore more symbols, the code should be refactored to ignore
+unreferenced symbols.
+
+Cc: <stable@vger.kernel.org>
+Link: https://github.com/ClangBuiltLinux/linux/issues/1250
+Link: https://sourceware.org/bugzilla/show_bug.cgi?id=27178
+Reported-by: Marco Elver <elver@google.com>
+Reviewed-by: Nick Desaulniers <ndesaulniers@google.com>
+Reviewed-by: Nathan Chancellor <natechancellor@gmail.com>
+Tested-by: Marco Elver <elver@google.com>
+Signed-off-by: Fangrui Song <maskray@google.com>
+Signed-off-by: Jessica Yu <jeyu@kernel.org>
+---
+ kernel/module.c | 21 +++++++++++++++++++--
+ 1 file changed, 19 insertions(+), 2 deletions(-)
+
+diff --git a/kernel/module.c b/kernel/module.c
+index 4bf30e4b3eaaa..805c49d1b86da 100644
+--- a/kernel/module.c
++++ b/kernel/module.c
+@@ -2348,6 +2348,21 @@ static int verify_exported_symbols(struct module *mod)
+ 	return 0;
+ }
+ 
++static bool ignore_undef_symbol(Elf_Half emachine, const char *name)
++{
++	/*
++	 * On x86, PIC code and Clang non-PIC code may have call foo@PLT. GNU as
++	 * before 2.37 produces an unreferenced _GLOBAL_OFFSET_TABLE_ on x86-64.
++	 * i386 has a similar problem but may not deserve a fix.
++	 *
++	 * If we ever have to ignore many symbols, consider refactoring the code to
++	 * only warn if referenced by a relocation.
++	 */
++	if (emachine == EM_386 || emachine == EM_X86_64)
++		return !strcmp(name, "_GLOBAL_OFFSET_TABLE_");
++	return false;
++}
++
+ /* Change all symbols so that st_value encodes the pointer directly. */
+ static int simplify_symbols(struct module *mod, const struct load_info *info)
+ {
+@@ -2395,8 +2410,10 @@ static int simplify_symbols(struct module *mod, const struct load_info *info)
+ 				break;
+ 			}
+ 
+-			/* Ok if weak.  */
+-			if (!ksym && ELF_ST_BIND(sym[i].st_info) == STB_WEAK)
++			/* Ok if weak or ignored.  */
++			if (!ksym &&
++			    (ELF_ST_BIND(sym[i].st_info) == STB_WEAK ||
++			     ignore_undef_symbol(info->hdr->e_machine, name)))
+ 				break;
+ 
+ 			ret = PTR_ERR(ksym) ?: -ENOENT;
+-- 
+cgit 1.2.3-1.el7
+
+From patchwork Thu Jan 21 08:24:51 2021
+Date: Thu, 21 Jan 2021 00:24:51 -0800
+Subject: [PATCH v6] pgo: add clang's Profile Guided Optimization
  infrastructure
 From: Bill Wendling <morbo@google.com>
 To: Jonathan Corbet <corbet@lwn.net>,
@@ -45,6 +251,8 @@ the clang support in kernel/gcov.
 Signed-off-by: Sami Tolvanen <samitolvanen@google.com>
 Co-developed-by: Bill Wendling <morbo@google.com>
 Signed-off-by: Bill Wendling <morbo@google.com>
+Tested-by: Nick Desaulniers <ndesaulniers@google.com>
+Tested-by: Sedat Dilek <sedat.dilek@gmail.com>
 ---
 v2: - Added "__llvm_profile_instrument_memop" based on Nathan Chancellor's
       testing.
@@ -54,6 +262,8 @@ v3: - Added change log section based on Sedat Dilek's comments.
 v4: - Remove non-x86 Makfile changes and se "hweight64" instead of using our
       own popcount implementation, based on Nick Desaulniers's comment.
 v5: - Correct padding calculation, discovered by Nathan Chancellor.
+v6: - Add better documentation about the locking scheme and other things.
+    - Rename macros to better match the same macros in LLVM's source code.
 ---
  Documentation/dev-tools/index.rst     |   1 +
  Documentation/dev-tools/pgo.rst       | 127 +++++++++
@@ -63,7 +273,7 @@ v5: - Correct padding calculation, discovered by Nathan Chancellor.
  arch/x86/Kconfig                      |   1 +
  arch/x86/boot/Makefile                |   1 +
  arch/x86/boot/compressed/Makefile     |   1 +
- arch/x86/crypto/Makefile              |   2 +
+ arch/x86/crypto/Makefile              |   4 +
  arch/x86/entry/vdso/Makefile          |   1 +
  arch/x86/kernel/vmlinux.lds.S         |   2 +
  arch/x86/platform/efi/Makefile        |   1 +
@@ -75,11 +285,11 @@ v5: - Correct padding calculation, discovered by Nathan Chancellor.
  kernel/Makefile                       |   1 +
  kernel/pgo/Kconfig                    |  35 +++
  kernel/pgo/Makefile                   |   5 +
- kernel/pgo/fs.c                       | 382 ++++++++++++++++++++++++++
- kernel/pgo/instrument.c               | 185 +++++++++++++
- kernel/pgo/pgo.h                      | 206 ++++++++++++++
+ kernel/pgo/fs.c                       | 389 ++++++++++++++++++++++++++
+ kernel/pgo/instrument.c               | 189 +++++++++++++
+ kernel/pgo/pgo.h                      | 203 ++++++++++++++
  scripts/Makefile.lib                  |  10 +
- 24 files changed, 1022 insertions(+)
+ 24 files changed, 1032 insertions(+)
  create mode 100644 Documentation/dev-tools/pgo.rst
  create mode 100644 kernel/pgo/Kconfig
  create mode 100644 kernel/pgo/Makefile
@@ -88,7 +298,7 @@ v5: - Correct padding calculation, discovered by Nathan Chancellor.
  create mode 100644 kernel/pgo/pgo.h
 
 diff --git a/Documentation/dev-tools/index.rst b/Documentation/dev-tools/index.rst
-index f7809c7b1ba9e..8d6418e858062 100644
+index f7809c7b1ba9..8d6418e85806 100644
 --- a/Documentation/dev-tools/index.rst
 +++ b/Documentation/dev-tools/index.rst
 @@ -26,6 +26,7 @@ whole; patches welcome!
@@ -101,7 +311,7 @@ index f7809c7b1ba9e..8d6418e858062 100644
  .. only::  subproject and html
 diff --git a/Documentation/dev-tools/pgo.rst b/Documentation/dev-tools/pgo.rst
 new file mode 100644
-index 0000000000000..b7f11d8405b73
+index 000000000000..b7f11d8405b7
 --- /dev/null
 +++ b/Documentation/dev-tools/pgo.rst
 @@ -0,0 +1,127 @@
@@ -233,7 +443,7 @@ index 0000000000000..b7f11d8405b73
 +
 +      $ make LLVM=1 KCFLAGS=-fprofile-use=vmlinux.profdata ...
 diff --git a/MAINTAINERS b/MAINTAINERS
-index 79b400c97059f..cb1f1f2b2baf4 100644
+index 00836f6452f0..13333026e140 100644
 --- a/MAINTAINERS
 +++ b/MAINTAINERS
 @@ -13948,6 +13948,15 @@ S:	Maintained
@@ -253,7 +463,7 @@ index 79b400c97059f..cb1f1f2b2baf4 100644
  M:	Marcus Folkesson <marcus.folkesson@gmail.com>
  L:	linux-input@vger.kernel.org
 diff --git a/Makefile b/Makefile
-index 9e73f82e0d863..9128bfe1ccc97 100644
+index b0e4767735dc..9339541f7cec 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -659,6 +659,9 @@ endif # KBUILD_EXTMOD
@@ -267,7 +477,7 @@ index 9e73f82e0d863..9128bfe1ccc97 100644
  	$(call cc-option,-fno-tree-loop-im) \
  	$(call cc-disable-warning,maybe-uninitialized,)
 diff --git a/arch/Kconfig b/arch/Kconfig
-index 24862d15f3a36..f39d3991f6bfe 100644
+index 24862d15f3a3..f39d3991f6bf 100644
 --- a/arch/Kconfig
 +++ b/arch/Kconfig
 @@ -1112,6 +1112,7 @@ config ARCH_SPLIT_ARG64
@@ -279,7 +489,7 @@ index 24862d15f3a36..f39d3991f6bfe 100644
  source "scripts/gcc-plugins/Kconfig"
  
 diff --git a/arch/x86/Kconfig b/arch/x86/Kconfig
-index 21f851179ff08..36305ea61dc09 100644
+index 21f851179ff0..36305ea61dc0 100644
 --- a/arch/x86/Kconfig
 +++ b/arch/x86/Kconfig
 @@ -96,6 +96,7 @@ config X86
@@ -291,7 +501,7 @@ index 21f851179ff08..36305ea61dc09 100644
 	select ARCH_SUPPORTS_LTO_CLANG_THIN	if X86_64
 	select ARCH_USE_BUILTIN_BSWAP
 diff --git a/arch/x86/boot/Makefile b/arch/x86/boot/Makefile
-index fe605205b4ce2..383853e32f673 100644
+index fe605205b4ce..383853e32f67 100644
 --- a/arch/x86/boot/Makefile
 +++ b/arch/x86/boot/Makefile
 @@ -71,6 +71,7 @@ KBUILD_AFLAGS	:= $(KBUILD_CFLAGS) -D__ASSEMBLY__
@@ -303,7 +513,7 @@ index fe605205b4ce2..383853e32f673 100644
  
  $(obj)/bzImage: asflags-y  := $(SVGA_MODE)
 diff --git a/arch/x86/boot/compressed/Makefile b/arch/x86/boot/compressed/Makefile
-index e0bc3988c3faa..ed12ab65f6065 100644
+index e0bc3988c3fa..ed12ab65f606 100644
 --- a/arch/x86/boot/compressed/Makefile
 +++ b/arch/x86/boot/compressed/Makefile
 @@ -54,6 +54,7 @@ CFLAGS_sev-es.o += -I$(objtree)/arch/x86/lib/
@@ -315,20 +525,22 @@ index e0bc3988c3faa..ed12ab65f6065 100644
  
  KBUILD_LDFLAGS := -m elf_$(UTS_MACHINE)
 diff --git a/arch/x86/crypto/Makefile b/arch/x86/crypto/Makefile
-index a31de0c6ccde2..775fa0b368e98 100644
+index a31de0c6ccde..5753aea7bcbd 100644
 --- a/arch/x86/crypto/Makefile
 +++ b/arch/x86/crypto/Makefile
-@@ -4,6 +4,8 @@
+@@ -4,6 +4,10 @@
  
  OBJECT_FILES_NON_STANDARD := y
  
-+PGO_PROFILE := n
++# Disable PGO for curve25519-x86_64. With PGO enabled, clang runs out of
++# registers for some of the functions.
++PGO_PROFILE_curve25519-x86_64.o := n
 +
  obj-$(CONFIG_CRYPTO_GLUE_HELPER_X86) += glue_helper.o
  
  obj-$(CONFIG_CRYPTO_TWOFISH_586) += twofish-i586.o
 diff --git a/arch/x86/entry/vdso/Makefile b/arch/x86/entry/vdso/Makefile
-index 02e3e42f380bd..26e2b3af0145c 100644
+index 02e3e42f380b..26e2b3af0145 100644
 --- a/arch/x86/entry/vdso/Makefile
 +++ b/arch/x86/entry/vdso/Makefile
 @@ -179,6 +179,7 @@ quiet_cmd_vdso = VDSO    $@
@@ -340,7 +552,7 @@ index 02e3e42f380bd..26e2b3af0145c 100644
  quiet_cmd_vdso_and_check = VDSO    $@
        cmd_vdso_and_check = $(cmd_vdso); $(cmd_vdso_check)
 diff --git a/arch/x86/kernel/vmlinux.lds.S b/arch/x86/kernel/vmlinux.lds.S
-index efd9e9ea17f25..f6cab2316c46a 100644
+index efd9e9ea17f2..f6cab2316c46 100644
 --- a/arch/x86/kernel/vmlinux.lds.S
 +++ b/arch/x86/kernel/vmlinux.lds.S
 @@ -184,6 +184,8 @@ SECTIONS
@@ -353,7 +565,7 @@ index efd9e9ea17f25..f6cab2316c46a 100644
  
  	. = ALIGN(PAGE_SIZE);
 diff --git a/arch/x86/platform/efi/Makefile b/arch/x86/platform/efi/Makefile
-index 84b09c230cbd5..5f22b31446ad4 100644
+index 84b09c230cbd..5f22b31446ad 100644
 --- a/arch/x86/platform/efi/Makefile
 +++ b/arch/x86/platform/efi/Makefile
 @@ -2,6 +2,7 @@
@@ -365,7 +577,7 @@ index 84b09c230cbd5..5f22b31446ad4 100644
  obj-$(CONFIG_EFI) 		+= quirks.o efi.o efi_$(BITS).o efi_stub_$(BITS).o
  obj-$(CONFIG_EFI_MIXED)		+= efi_thunk_$(BITS).o
 diff --git a/arch/x86/purgatory/Makefile b/arch/x86/purgatory/Makefile
-index 95ea17a9d20cb..36f20e99da0bc 100644
+index 95ea17a9d20c..36f20e99da0b 100644
 --- a/arch/x86/purgatory/Makefile
 +++ b/arch/x86/purgatory/Makefile
 @@ -23,6 +23,7 @@ targets += purgatory.ro purgatory.chk
@@ -377,7 +589,7 @@ index 95ea17a9d20cb..36f20e99da0bc 100644
  UBSAN_SANITIZE	:= n
  KCSAN_SANITIZE	:= n
 diff --git a/arch/x86/realmode/rm/Makefile b/arch/x86/realmode/rm/Makefile
-index 83f1b6a56449f..21797192f958f 100644
+index 83f1b6a56449..21797192f958 100644
 --- a/arch/x86/realmode/rm/Makefile
 +++ b/arch/x86/realmode/rm/Makefile
 @@ -76,4 +76,5 @@ KBUILD_CFLAGS	:= $(REALMODE_CFLAGS) -D_SETUP -D_WAKEUP \
@@ -387,7 +599,7 @@ index 83f1b6a56449f..21797192f958f 100644
 +PGO_PROFILE := n
  UBSAN_SANITIZE := n
 diff --git a/arch/x86/um/vdso/Makefile b/arch/x86/um/vdso/Makefile
-index 5943387e3f357..54f5768f58530 100644
+index 5943387e3f35..54f5768f5853 100644
 --- a/arch/x86/um/vdso/Makefile
 +++ b/arch/x86/um/vdso/Makefile
 @@ -64,6 +64,7 @@ quiet_cmd_vdso = VDSO    $@
@@ -399,7 +611,7 @@ index 5943387e3f357..54f5768f58530 100644
  #
  # Install the unstripped copy of vdso*.so listed in $(vdso-install-y).
 diff --git a/drivers/firmware/efi/libstub/Makefile b/drivers/firmware/efi/libstub/Makefile
-index 8a94388e38b33..2d81623b33f29 100644
+index 8a94388e38b3..2d81623b33f2 100644
 --- a/drivers/firmware/efi/libstub/Makefile
 +++ b/drivers/firmware/efi/libstub/Makefile
 @@ -40,6 +40,7 @@ KBUILD_CFLAGS			:= $(cflags-y) -Os -DDISABLE_BRANCH_PROFILING \
@@ -411,7 +623,7 @@ index 8a94388e38b33..2d81623b33f29 100644
  KASAN_SANITIZE			:= n
  KCSAN_SANITIZE			:= n
 diff --git a/include/asm-generic/vmlinux.lds.h b/include/asm-generic/vmlinux.lds.h
-index b2b3d81b1535a..3a591bb18c5fb 100644
+index b2b3d81b1535..3a591bb18c5f 100644
 --- a/include/asm-generic/vmlinux.lds.h
 +++ b/include/asm-generic/vmlinux.lds.h
 @@ -316,6 +316,49 @@
@@ -473,7 +685,7 @@ index b2b3d81b1535a..3a591bb18c5fb 100644
  #define INIT_TEXT_SECTION(inittext_align)				\
  	. = ALIGN(inittext_align);					\
 diff --git a/kernel/Makefile b/kernel/Makefile
-index aa7368c7eabf3..0b34ca228ba46 100644
+index aa7368c7eabf..0b34ca228ba4 100644
 --- a/kernel/Makefile
 +++ b/kernel/Makefile
 @@ -111,6 +111,7 @@ obj-$(CONFIG_BPF) += bpf/
@@ -486,7 +698,7 @@ index aa7368c7eabf3..0b34ca228ba46 100644
  
 diff --git a/kernel/pgo/Kconfig b/kernel/pgo/Kconfig
 new file mode 100644
-index 0000000000000..76a640b6cf6ed
+index 000000000000..76a640b6cf6e
 --- /dev/null
 +++ b/kernel/pgo/Kconfig
 @@ -0,0 +1,35 @@
@@ -527,7 +739,7 @@ index 0000000000000..76a640b6cf6ed
 +endmenu
 diff --git a/kernel/pgo/Makefile b/kernel/pgo/Makefile
 new file mode 100644
-index 0000000000000..41e27cefd9a47
+index 000000000000..41e27cefd9a4
 --- /dev/null
 +++ b/kernel/pgo/Makefile
 @@ -0,0 +1,5 @@
@@ -538,10 +750,10 @@ index 0000000000000..41e27cefd9a47
 +obj-y	+= fs.o instrument.o
 diff --git a/kernel/pgo/fs.c b/kernel/pgo/fs.c
 new file mode 100644
-index 0000000000000..68b24672be10a
+index 000000000000..132ff2ab3feb
 --- /dev/null
 +++ b/kernel/pgo/fs.c
-@@ -0,0 +1,382 @@
+@@ -0,0 +1,389 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Copyright (C) 2019 Google, Inc.
@@ -598,8 +810,12 @@ index 0000000000000..68b24672be10a
 +{
 +	struct llvm_prf_header *header = *(struct llvm_prf_header **)buffer;
 +
-+	header->magic = LLVM_PRF_MAGIC;
-+	header->version = LLVM_PRF_VARIANT_MASK_IR | LLVM_PRF_VERSION;
++#ifdef CONFIG_64BIT
++	header->magic = LLVM_INSTR_PROF_RAW_MAGIC_64;
++#else
++	header->magic = LLVM_INSTR_PROF_RAW_MAGIC_32;
++#endif
++	header->version = LLVM_VARIANT_MASK_IR_PROF | LLVM_INSTR_PROF_RAW_VERSION;
 +	header->data_size = prf_data_count();
 +	header->padding_bytes_before_counters = 0;
 +	header->counters_size = prf_cnts_count();
@@ -607,7 +823,7 @@ index 0000000000000..68b24672be10a
 +	header->names_size = prf_names_count();
 +	header->counters_delta = (u64)__llvm_prf_cnts_start;
 +	header->names_delta = (u64)__llvm_prf_names_start;
-+	header->value_kind_last = LLVM_PRF_IPVK_LAST;
++	header->value_kind_last = LLVM_INSTR_PROF_IPVK_LAST;
 +
 +	*buffer += sizeof(*header);
 +}
@@ -750,7 +966,7 @@ index 0000000000000..68b24672be10a
 +
 +static inline unsigned long prf_get_padding(unsigned long size)
 +{
-+	return 7 & (8 - size % 8);
++	return 7 & (sizeof(u64) - size % sizeof(u64));
 +}
 +
 +static unsigned long prf_buffer_size(void)
@@ -763,7 +979,10 @@ index 0000000000000..68b24672be10a
 +			prf_get_value_size();
 +}
 +
-+/* Serialize the profiling data into a format LLVM's tools can understand. */
++/*
++ * Serialize the profiling data into a format LLVM's tools can understand.
++ * Note: caller *must* hold pgo_lock.
++ */
 +static int prf_serialize(struct prf_private_data *p)
 +{
 +	int err = 0;
@@ -807,7 +1026,7 @@ index 0000000000000..68b24672be10a
 +	flags = prf_lock();
 +
 +	err = prf_serialize(data);
-+	if (err) {
++	if (unlikely(err)) {
 +		kfree(data);
 +		goto out_unlock;
 +	}
@@ -861,7 +1080,7 @@ index 0000000000000..68b24672be10a
 +
 +	memset(__llvm_prf_cnts_start, 0, prf_cnts_size());
 +
-+	for (data = __llvm_prf_data_start; data < __llvm_prf_data_end; ++data) {
++	for (data = __llvm_prf_data_start; data < __llvm_prf_data_end; data++) {
 +		struct llvm_prf_value_node **vnodes;
 +		u64 current_vsite_count;
 +		u32 i;
@@ -872,10 +1091,10 @@ index 0000000000000..68b24672be10a
 +		current_vsite_count = 0;
 +		vnodes = (struct llvm_prf_value_node **)data->values;
 +
-+		for (i = LLVM_PRF_IPVK_FIRST; i <= LLVM_PRF_IPVK_LAST; ++i)
++		for (i = LLVM_INSTR_PROF_IPVK_FIRST; i <= LLVM_INSTR_PROF_IPVK_LAST; i++)
 +			current_vsite_count += data->num_value_sites[i];
 +
-+		for (i = 0; i < current_vsite_count; ++i) {
++		for (i = 0; i < current_vsite_count; i++) {
 +			struct llvm_prf_value_node *current_vnode = vnodes[i];
 +
 +			while (current_vnode) {
@@ -926,10 +1145,10 @@ index 0000000000000..68b24672be10a
 +module_exit(pgo_exit);
 diff --git a/kernel/pgo/instrument.c b/kernel/pgo/instrument.c
 new file mode 100644
-index 0000000000000..6084ff0652e85
+index 000000000000..62ff5cfce7b1
 --- /dev/null
 +++ b/kernel/pgo/instrument.c
-@@ -0,0 +1,185 @@
+@@ -0,0 +1,189 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Copyright (C) 2019 Google, Inc.
@@ -957,7 +1176,11 @@ index 0000000000000..6084ff0652e85
 +#include <linux/types.h>
 +#include "pgo.h"
 +
-+/* Lock guarding value node access and serialization. */
++/*
++ * This lock guards both profile count updating and serialization of the
++ * profiling data. Keeping both of these activities separate via locking
++ * ensures that we don't try to serialize data that's only partially updated.
++ */
 +static DEFINE_SPINLOCK(pgo_lock);
 +static int current_node;
 +
@@ -999,7 +1222,7 @@ index 0000000000000..6084ff0652e85
 +/*
 + * Counts the number of times a target value is seen.
 + *
-+ * Records the target value for the CounterIndex if not seen before. Otherwise,
++ * Records the target value for the index if not seen before. Otherwise,
 + * increments the counter associated w/ the target value.
 + */
 +void __llvm_profile_instrument_target(u64 target_value, void *data, u32 index);
@@ -1036,7 +1259,7 @@ index 0000000000000..6084ff0652e85
 +		values++;
 +	}
 +
-+	if (values >= LLVM_PRF_MAX_NUM_VALS_PER_SITE) {
++	if (values >= LLVM_INSTR_PROF_MAX_NUM_VAL_PER_SITE) {
 +		if (!min->count || !(--min->count)) {
 +			curr = min;
 +			curr->value = target_value;
@@ -1086,7 +1309,7 @@ index 0000000000000..6084ff0652e85
 +static u64 inst_prof_get_range_rep_value(u64 value)
 +{
 +	if (value <= 8)
-+		/* The first ranges are individually tracked, us it as is. */
++		/* The first ranges are individually tracked, use it as is. */
 +		return value;
 +	else if (value >= 513)
 +		/* The last range is mapped to its lowest value. */
@@ -1117,10 +1340,10 @@ index 0000000000000..6084ff0652e85
 +EXPORT_SYMBOL(__llvm_profile_instrument_memop);
 diff --git a/kernel/pgo/pgo.h b/kernel/pgo/pgo.h
 new file mode 100644
-index 0000000000000..df0aa278f28bd
+index 000000000000..0d33e07a0bf3
 --- /dev/null
 +++ b/kernel/pgo/pgo.h
-@@ -0,0 +1,206 @@
+@@ -0,0 +1,203 @@
 +/* SPDX-License-Identifier: GPL-2.0 */
 +/*
 + * Copyright (C) 2019 Google, Inc.
@@ -1147,8 +1370,7 @@ index 0000000000000..df0aa278f28bd
 + * See llvm/include/llvm/ProfileData/InstrProfData.inc in LLVM's source code.
 + */
 +
-+#ifdef CONFIG_64BIT
-+	#define LLVM_PRF_MAGIC		\
++#define LLVM_INSTR_PROF_RAW_MAGIC_64	\
 +		((u64)255 << 56 |	\
 +		 (u64)'l' << 48 |	\
 +		 (u64)'p' << 40 |	\
@@ -1157,8 +1379,7 @@ index 0000000000000..df0aa278f28bd
 +		 (u64)'f' << 16 |	\
 +		 (u64)'r' << 8  |	\
 +		 (u64)129)
-+#else
-+	#define LLVM_PRF_MAGIC		\
++#define LLVM_INSTR_PROF_RAW_MAGIC_32	\
 +		((u64)255 << 56 |	\
 +		 (u64)'l' << 48 |	\
 +		 (u64)'p' << 40 |	\
@@ -1167,16 +1388,15 @@ index 0000000000000..df0aa278f28bd
 +		 (u64)'f' << 16 |	\
 +		 (u64)'R' << 8  |	\
 +		 (u64)129)
-+#endif
 +
-+#define LLVM_PRF_VERSION		5
-+#define LLVM_PRF_DATA_ALIGN		8
-+#define LLVM_PRF_IPVK_FIRST		0
-+#define LLVM_PRF_IPVK_LAST		1
-+#define LLVM_PRF_MAX_NUM_VALS_PER_SITE	16
++#define LLVM_INSTR_PROF_RAW_VERSION		5
++#define LLVM_INSTR_PROF_DATA_ALIGNMENT		8
++#define LLVM_INSTR_PROF_IPVK_FIRST		0
++#define LLVM_INSTR_PROF_IPVK_LAST		1
++#define LLVM_INSTR_PROF_MAX_NUM_VAL_PER_SITE	255
 +
-+#define LLVM_PRF_VARIANT_MASK_IR	(0x1ull << 56)
-+#define LLVM_PRF_VARIANT_MASK_CSIR	(0x1ull << 57)
++#define LLVM_VARIANT_MASK_IR_PROF	(0x1ULL << 56)
++#define LLVM_VARIANT_MASK_CSIR_PROF	(0x1ULL << 57)
 +
 +/**
 + * struct llvm_prf_header - represents the raw profile header data structure.
@@ -1225,8 +1445,8 @@ index 0000000000000..df0aa278f28bd
 +	const void *function_ptr;
 +	void *values;
 +	const u32 num_counters;
-+	const u16 num_value_sites[LLVM_PRF_IPVK_LAST + 1];
-+} __aligned(LLVM_PRF_DATA_ALIGN);
++	const u16 num_value_sites[LLVM_INSTR_PROF_IPVK_LAST + 1];
++} __aligned(LLVM_INSTR_PROF_DATA_ALIGNMENT);
 +
 +/**
 + * structure llvm_prf_value_node_data - represents the data part of the struct
@@ -1328,7 +1548,7 @@ index 0000000000000..df0aa278f28bd
 +
 +#endif /* _PGO_H */
 diff --git a/scripts/Makefile.lib b/scripts/Makefile.lib
-index 213677a5ed33e..9b218afb5cb87 100644
+index 213677a5ed33..9b218afb5cb8 100644
 --- a/scripts/Makefile.lib
 +++ b/scripts/Makefile.lib
 @@ -143,6 +143,16 @@ _c_flags += $(if $(patsubst n%,, \
@@ -1348,62 +1568,3 @@ index 213677a5ed33e..9b218afb5cb87 100644
  #
  # Enable address sanitizer flags for kernel except some files or directories
  # we don't want to check (depends on variables KASAN_SANITIZE_obj.o, KASAN_SANITIZE)
---
---- a/arch/x86/kernel/cpu/mce/Makefile	2021-01-18 01:37:05.000000000 +0100
-+++ b/arch/x86/kernel/cpu/mce/Makefile	2021-01-19 10:04:01.461973974 +0100
-@@ -1,4 +1,7 @@
- # SPDX-License-Identifier: GPL-2.0
-+
-+PGO_PROFILE := n
-+
- obj-y				=  core.o severity.o genpool.o
- 
- obj-$(CONFIG_X86_ANCIENT_MCE)	+= winchip.o p5.o
---
---- a/arch/x86/kvm/Makefile	2021-01-18 01:37:05.000000000 +0100
-+++ b/arch/x86/kvm/Makefile	2021-01-19 10:04:52.831974394 +0100
-@@ -1,5 +1,7 @@
- # SPDX-License-Identifier: GPL-2.0
- 
-+PGO_PROFILE := n
-+
- ccflags-y += -Iarch/x86/kvm
- ccflags-$(CONFIG_KVM_WERROR) += -Werror
- 
---
---- a/arch/x86/kernel/cpu/Makefile	2021-01-18 01:37:05.000000000 +0100
-+++ b/arch/x86/kernel/cpu/Makefile	2021-01-19 11:16:43.212009637 +0100
-@@ -3,6 +3,8 @@
- # Makefile for x86-compatible CPU details, features and quirks
- #
- 
-+PGO_PROFILE := n
-+
- # Don't trace early stages of a secondary CPU boot
- ifdef CONFIG_FUNCTION_TRACER
- CFLAGS_REMOVE_common.o = -pg
---
---- a/arch/x86/kernel/Makefile	2021-01-18 01:37:05.000000000 +0100
-+++ b/arch/x86/kernel/Makefile	2021-01-19 12:58:51.002059741 +0100
-@@ -3,6 +3,8 @@
- # Makefile for the linux kernel.
- #
- 
-+PGO_PROFILE_cpuid.o := n
-+
- extra-y	:= head_$(BITS).o
- extra-y	+= head$(BITS).o
- extra-y	+= ebda.o
---
---- a/crypto/Makefile	2021-01-18 01:37:05.000000000 +0100
-+++ b/crypto/Makefile	2021-01-19 14:19:14.102099176 +0100
-@@ -3,6 +3,8 @@
- # Cryptographic API
- #
- 
-+PGO_PROFILE := n
-+
- obj-$(CONFIG_CRYPTO) += crypto.o
- crypto-y := api.o cipher.o compress.o memneq.o
- 
---

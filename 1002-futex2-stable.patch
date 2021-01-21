@@ -1,4 +1,4 @@
-From 4f8638a84a1f3abade0fb3586114cd67957f0c24 Mon Sep 17 00:00:00 2001
+From 14a106cc87e6d03169ac8c7ea030e3d7fac2dfe4 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Andr=C3=A9=20Almeida?= <andrealmeid@collabora.com>
 Date: Wed, 5 Aug 2020 12:40:26 -0300
 Subject: [PATCH] futex2: Add new futex interface
@@ -28,10 +28,10 @@ Signed-off-by: torvic9 <torvic9@mailbox.org>
  create mode 100644 kernel/futex2.c
 
 diff --git a/MAINTAINERS b/MAINTAINERS
-index ebe4829cd..8f5bd02e4 100644
+index 2daa6ee67..855d38511 100644
 --- a/MAINTAINERS
 +++ b/MAINTAINERS
-@@ -7270,7 +7270,7 @@ F:	Documentation/locking/*futex*
+@@ -7259,7 +7259,7 @@ F:	Documentation/locking/*futex*
  F:	include/asm-generic/futex.h
  F:	include/linux/futex.h
  F:	include/uapi/linux/futex.h
@@ -722,9 +722,9 @@ index 379819244..47de3bf93 100644
  #
  # Due to a historical design error, certain syscalls are numbered differently
 -- 
-2.29.2
+2.30.0
 
-From bf2a775f3333f1786b5064efb79f56fe5aee7179 Mon Sep 17 00:00:00 2001
+From d71973d99efb1e2fd2542ea4d4b45b0e03e45b9c Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Andr=C3=A9=20Almeida?= <andrealmeid@collabora.com>
 Date: Thu, 15 Oct 2020 17:15:57 -0300
 Subject: [PATCH] futex2: Add suport for vectorized wait
@@ -1367,9 +1367,9 @@ index 47de3bf93..bd47f368f 100644
  #
  # Due to a historical design error, certain syscalls are numbered differently
 -- 
-2.29.2
+2.30.0
 
-From cc160930688ac3ebd981c3b1592dfbfa95676f3e Mon Sep 17 00:00:00 2001
+From 24681616a5432f7680f934abf335a9ab9a1eaf1e Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Andr=C3=A9=20Almeida?= <andrealmeid@collabora.com>
 Date: Thu, 15 Oct 2020 18:06:40 -0300
 Subject: [PATCH] futex2: Add support for shared futexes
@@ -1754,9 +1754,9 @@ index 4b782b5ef..5ddb9922d 100644
  				futex_get_parent((uintptr_t) aux, aux->index);
  
 -- 
-2.29.2
+2.30.0
 
-From 0dc22c9fb35375aafc8043087da5d571196cf581 Mon Sep 17 00:00:00 2001
+From ce3ae4bd9f98763fda07f315c1f239c4aaef4b5e Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Andr=C3=A9=20Almeida?= <andrealmeid@collabora.com>
 Date: Thu, 9 Jul 2020 11:34:40 -0300
 Subject: [PATCH] selftests: futex: Add futex2 wake/wait test
@@ -2075,9 +2075,9 @@ index 000000000..807b8b57f
 +	return syscall(__NR_futex_wake, uaddr, nr, flags);
 +}
 -- 
-2.29.2
+2.30.0
 
-From c93df8ac03272715f1d66aee1ca5b56157f21958 Mon Sep 17 00:00:00 2001
+From 1e0349f5a81a43cdb50d9a97812194df6d937b69 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Andr=C3=A9=20Almeida?= <andrealmeid@collabora.com>
 Date: Thu, 9 Jul 2020 11:36:14 -0300
 Subject: [PATCH] selftests: futex: Add futex2 timeout test
@@ -2194,9 +2194,9 @@ index ee55e6d38..245670e44 100644
  	return ret;
  }
 -- 
-2.29.2
+2.30.0
 
-From e8e5a2c5b3835bfe60de2e37e1ea2610a89312c3 Mon Sep 17 00:00:00 2001
+From 298120f6e3a758cd03e26a104f5ce60a88501b7f Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Andr=C3=A9=20Almeida?= <andrealmeid@collabora.com>
 Date: Thu, 9 Jul 2020 11:37:42 -0300
 Subject: [PATCH] selftests: futex: Add futex2 wouldblock test
@@ -2288,9 +2288,9 @@ index 0ae390ff8..1f72e5928 100644
  	return ret;
  }
 -- 
-2.29.2
+2.30.0
 
-From 18ffa2083c7b5bb1248eae5c3ae99ae7269cd1ba Mon Sep 17 00:00:00 2001
+From 05c697a239aad5e8608c6acf0da9239cac5f7a2e Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Andr=C3=A9=20Almeida?= <andrealmeid@collabora.com>
 Date: Tue, 8 Dec 2020 18:47:31 -0300
 Subject: [PATCH] selftests: futex: Add futex2 waitv test
@@ -2546,9 +2546,9 @@ index 807b8b57f..10be0c504 100644
 +	return syscall(__NR_futex_waitv, waiters, nr_waiters, flags, timo);
 +}
 -- 
-2.29.2
+2.30.0
 
-From 7dd2c15734885cdca6933a29058dfe9b716eeadb Mon Sep 17 00:00:00 2001
+From 9358bbdf929a90bc144d13e002fed8f4223d3178 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Andr=C3=A9=20Almeida?= <andrealmeid@collabora.com>
 Date: Fri, 4 Dec 2020 19:12:23 -0300
 Subject: [PATCH] futex2: Add sysfs entry for syscall numbers
@@ -2616,5 +2616,362 @@ index 5ddb9922d..58cd8a868 100644
  {
  	int i;
 -- 
-2.29.2
+2.30.0
+
+From f7b1c9a2ad05933e559ef78bc7753b2fac1698fd Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Andr=C3=A9=20Almeida?= <andrealmeid@collabora.com>
+Date: Tue, 5 Jan 2021 15:44:02 -0300
+Subject: [PATCH] perf bench: Add futex2 benchmark tests
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Port existing futex infrastructure to use futex2 calls.
+
+Signed-off-by: André Almeida <andrealmeid@collabora.com>
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ tools/arch/x86/include/asm/unistd_64.h |  8 +++++
+ tools/perf/bench/bench.h               |  3 ++
+ tools/perf/bench/futex-hash.c          | 24 ++++++++++++---
+ tools/perf/bench/futex-wake-parallel.c | 41 ++++++++++++++++++++++----
+ tools/perf/bench/futex-wake.c          | 36 ++++++++++++++++++----
+ tools/perf/bench/futex.h               | 17 +++++++++++
+ tools/perf/builtin-bench.c             | 17 ++++++++---
+ 7 files changed, 127 insertions(+), 19 deletions(-)
+
+diff --git a/tools/arch/x86/include/asm/unistd_64.h b/tools/arch/x86/include/asm/unistd_64.h
+index 4205ed415..151a41ceb 100644
+--- a/tools/arch/x86/include/asm/unistd_64.h
++++ b/tools/arch/x86/include/asm/unistd_64.h
+@@ -17,3 +17,11 @@
+ #ifndef __NR_setns
+ #define __NR_setns 308
+ #endif
++
++#ifndef __NR_futex_wait
++# define __NR_futex_wait 441
++#endif
++
++#ifndef __NR_futex_wake
++# define __NR_futex_wake 442
++#endif
+diff --git a/tools/perf/bench/bench.h b/tools/perf/bench/bench.h
+index eac36afab..f6f881a05 100644
+--- a/tools/perf/bench/bench.h
++++ b/tools/perf/bench/bench.h
+@@ -38,8 +38,11 @@ int bench_mem_memcpy(int argc, const char **argv);
+ int bench_mem_memset(int argc, const char **argv);
+ int bench_mem_find_bit(int argc, const char **argv);
+ int bench_futex_hash(int argc, const char **argv);
++int bench_futex2_hash(int argc, const char **argv);
+ int bench_futex_wake(int argc, const char **argv);
++int bench_futex2_wake(int argc, const char **argv);
+ int bench_futex_wake_parallel(int argc, const char **argv);
++int bench_futex2_wake_parallel(int argc, const char **argv);
+ int bench_futex_requeue(int argc, const char **argv);
+ /* pi futexes */
+ int bench_futex_lock_pi(int argc, const char **argv);
+diff --git a/tools/perf/bench/futex-hash.c b/tools/perf/bench/futex-hash.c
+index 915bf3da7..72921c22b 100644
+--- a/tools/perf/bench/futex-hash.c
++++ b/tools/perf/bench/futex-hash.c
+@@ -34,7 +34,7 @@ static unsigned int nthreads = 0;
+ static unsigned int nsecs    = 10;
+ /* amount of futexes per thread */
+ static unsigned int nfutexes = 1024;
+-static bool fshared = false, done = false, silent = false;
++static bool fshared = false, done = false, silent = false, futex2 = false;
+ static int futex_flag = 0;
+ 
+ struct timeval bench__start, bench__end, bench__runtime;
+@@ -86,7 +86,10 @@ static void *workerfn(void *arg)
+ 			 * such as internal waitqueue handling, thus enlarging
+ 			 * the critical region protected by hb->lock.
+ 			 */
+-			ret = futex_wait(&w->futex[i], 1234, NULL, futex_flag);
++			if (!futex2)
++				ret = futex_wait(&w->futex[i], 1234, NULL, futex_flag);
++			else
++				ret = futex2_wait(&w->futex[i], 1234, futex_flag, NULL);
+ 			if (!silent &&
+ 			    (!ret || errno != EAGAIN || errno != EWOULDBLOCK))
+ 				warn("Non-expected futex return call");
+@@ -117,7 +120,7 @@ static void print_summary(void)
+ 	       (int)bench__runtime.tv_sec);
+ }
+ 
+-int bench_futex_hash(int argc, const char **argv)
++static int bench_futex_hash_common(int argc, const char **argv)
+ {
+ 	int ret = 0;
+ 	cpu_set_t cpuset;
+@@ -149,7 +152,9 @@ int bench_futex_hash(int argc, const char **argv)
+ 	if (!worker)
+ 		goto errmem;
+ 
+-	if (!fshared)
++	if (futex2)
++		futex_flag = FUTEX_32 | (fshared * FUTEX_SHARED_FLAG);
++	else if (!fshared)
+ 		futex_flag = FUTEX_PRIVATE_FLAG;
+ 
+ 	printf("Run summary [PID %d]: %d threads, each operating on %d [%s] futexes for %d secs.\n\n",
+@@ -229,3 +234,14 @@ int bench_futex_hash(int argc, const char **argv)
+ errmem:
+ 	err(EXIT_FAILURE, "calloc");
+ }
++
++int bench_futex_hash(int argc, const char **argv)
++{
++	return bench_futex_hash_common(argc, argv);
++}
++
++int bench_futex2_hash(int argc, const char **argv)
++{
++	futex2 = true;
++	return bench_futex_hash_common(argc, argv);
++}
+diff --git a/tools/perf/bench/futex-wake-parallel.c b/tools/perf/bench/futex-wake-parallel.c
+index cd2b81a84..540104538 100644
+--- a/tools/perf/bench/futex-wake-parallel.c
++++ b/tools/perf/bench/futex-wake-parallel.c
+@@ -17,6 +17,12 @@ int bench_futex_wake_parallel(int argc __maybe_unused, const char **argv __maybe
+ 	pr_err("%s: pthread_barrier_t unavailable, disabling this test...\n", __func__);
+ 	return 0;
+ }
++
++int bench_futex2_wake_parallel(int argc __maybe_unused, const char **argv __maybe_unused)
++{
++	pr_err("%s: pthread_barrier_t unavailable, disabling this test...\n", __func__);
++	return 0;
++}
+ #else /* HAVE_PTHREAD_BARRIER */
+ /* For the CLR_() macros */
+ #include <string.h>
+@@ -48,7 +54,7 @@ static unsigned int nwakes = 1;
+ static u_int32_t futex = 0;
+ 
+ static pthread_t *blocked_worker;
+-static bool done = false, silent = false, fshared = false;
++static bool done = false, silent = false, fshared = false, futex2 = false;
+ static unsigned int nblocked_threads = 0, nwaking_threads = 0;
+ static pthread_mutex_t thread_lock;
+ static pthread_cond_t thread_parent, thread_worker;
+@@ -79,7 +85,11 @@ static void *waking_workerfn(void *arg)
+ 
+ 	gettimeofday(&start, NULL);
+ 
+-	waker->nwoken = futex_wake(&futex, nwakes, futex_flag);
++	if (!futex2)
++		waker->nwoken = futex_wake(&futex, nwakes, futex_flag);
++	else
++		waker->nwoken = futex2_wake(&futex, nwakes, futex_flag);
++
+ 	if (waker->nwoken != nwakes)
+ 		warnx("couldn't wakeup all tasks (%d/%d)",
+ 		      waker->nwoken, nwakes);
+@@ -130,8 +140,13 @@ static void *blocked_workerfn(void *arg __maybe_unused)
+ 	pthread_mutex_unlock(&thread_lock);
+ 
+ 	while (1) { /* handle spurious wakeups */
+-		if (futex_wait(&futex, 0, NULL, futex_flag) != EINTR)
+-			break;
++		if (!futex2) {
++			if (futex_wait(&futex, 0, NULL, futex_flag) != EINTR)
++				break;
++		} else {
++			if (futex2_wait(&futex, 0, futex_flag, NULL) != EINTR)
++				break;
++		}
+ 	}
+ 
+ 	pthread_exit(NULL);
+@@ -218,7 +233,7 @@ static void toggle_done(int sig __maybe_unused,
+ 	done = true;
+ }
+ 
+-int bench_futex_wake_parallel(int argc, const char **argv)
++static int bench_futex_wake_parallel_common(int argc, const char **argv)
+ {
+ 	int ret = 0;
+ 	unsigned int i, j;
+@@ -262,7 +277,9 @@ int bench_futex_wake_parallel(int argc, const char **argv)
+ 	if (!blocked_worker)
+ 		err(EXIT_FAILURE, "calloc");
+ 
+-	if (!fshared)
++	if (futex2)
++		futex_flag = FUTEX_32 | (fshared * FUTEX_SHARED_FLAG);
++	else if (!fshared)
+ 		futex_flag = FUTEX_PRIVATE_FLAG;
+ 
+ 	printf("Run summary [PID %d]: blocking on %d threads (at [%s] "
+@@ -322,4 +339,16 @@ int bench_futex_wake_parallel(int argc, const char **argv)
+ 	free(blocked_worker);
+ 	return ret;
+ }
++
++int bench_futex_wake_parallel(int argc, const char **argv)
++{
++	return bench_futex_wake_parallel_common(argc, argv);
++}
++
++int bench_futex2_wake_parallel(int argc, const char **argv)
++{
++	futex2 = true;
++	return bench_futex_wake_parallel_common(argc, argv);
++}
++
+ #endif /* HAVE_PTHREAD_BARRIER */
+diff --git a/tools/perf/bench/futex-wake.c b/tools/perf/bench/futex-wake.c
+index 2dfcef3e3..b98b84e7b 100644
+--- a/tools/perf/bench/futex-wake.c
++++ b/tools/perf/bench/futex-wake.c
+@@ -46,6 +46,9 @@ static struct stats waketime_stats, wakeup_stats;
+ static unsigned int threads_starting, nthreads = 0;
+ static int futex_flag = 0;
+ 
++/* Should we use futex2 API? */
++static bool futex2 = false;
++
+ static const struct option options[] = {
+ 	OPT_UINTEGER('t', "threads", &nthreads, "Specify amount of threads"),
+ 	OPT_UINTEGER('w', "nwakes",  &nwakes,   "Specify amount of threads to wake at once"),
+@@ -69,8 +72,13 @@ static void *workerfn(void *arg __maybe_unused)
+ 	pthread_mutex_unlock(&thread_lock);
+ 
+ 	while (1) {
+-		if (futex_wait(&futex1, 0, NULL, futex_flag) != EINTR)
+-			break;
++		if (!futex2) {
++			if (futex_wait(&futex1, 0, NULL, futex_flag) != EINTR)
++				break;
++		} else {
++			if (futex2_wait(&futex1, 0, futex_flag, NULL) != EINTR)
++				break;
++		}
+ 	}
+ 
+ 	pthread_exit(NULL);
+@@ -118,7 +126,7 @@ static void toggle_done(int sig __maybe_unused,
+ 	done = true;
+ }
+ 
+-int bench_futex_wake(int argc, const char **argv)
++static int bench_futex_wake_common(int argc, const char **argv)
+ {
+ 	int ret = 0;
+ 	unsigned int i, j;
+@@ -148,7 +156,9 @@ int bench_futex_wake(int argc, const char **argv)
+ 	if (!worker)
+ 		err(EXIT_FAILURE, "calloc");
+ 
+-	if (!fshared)
++	if (futex2)
++		futex_flag = FUTEX_32 | (fshared * FUTEX_SHARED_FLAG);
++	else if (!fshared)
+ 		futex_flag = FUTEX_PRIVATE_FLAG;
+ 
+ 	printf("Run summary [PID %d]: blocking on %d threads (at [%s] futex %p), "
+@@ -181,8 +191,13 @@ int bench_futex_wake(int argc, const char **argv)
+ 		/* Ok, all threads are patiently blocked, start waking folks up */
+ 		gettimeofday(&start, NULL);
+ 		while (nwoken != nthreads)
+-			nwoken += futex_wake(&futex1, nwakes, futex_flag);
++			if (!futex2) {
++				nwoken += futex_wake(&futex1, nwakes, futex_flag);
++			} else {
++				nwoken += futex2_wake(&futex1, nwakes, futex_flag);
++		}
+ 		gettimeofday(&end, NULL);
++
+ 		timersub(&end, &start, &runtime);
+ 
+ 		update_stats(&wakeup_stats, nwoken);
+@@ -212,3 +227,14 @@ int bench_futex_wake(int argc, const char **argv)
+ 	free(worker);
+ 	return ret;
+ }
++
++int bench_futex_wake(int argc, const char **argv)
++{
++	return bench_futex_wake_common(argc, argv);
++}
++
++int bench_futex2_wake(int argc, const char **argv)
++{
++	futex2 = true;
++	return bench_futex_wake_common(argc, argv);
++}
+diff --git a/tools/perf/bench/futex.h b/tools/perf/bench/futex.h
+index 31b53cc7d..5111799b5 100644
+--- a/tools/perf/bench/futex.h
++++ b/tools/perf/bench/futex.h
+@@ -86,4 +86,21 @@ futex_cmp_requeue(u_int32_t *uaddr, u_int32_t val, u_int32_t *uaddr2, int nr_wak
+ 	return futex(uaddr, FUTEX_CMP_REQUEUE, nr_wake, nr_requeue, uaddr2,
+ 		 val, opflags);
+ }
++
++/*
++ * wait for uaddr if (*uaddr == val)
++ */
++static inline int futex2_wait(volatile void *uaddr, unsigned long val,
++			      unsigned long flags, struct timespec *timo)
++{
++	return syscall(__NR_futex_wait, uaddr, val, flags, timo);
++}
++
++/*
++ * wake nr futexes waiting for uaddr
++ */
++static inline int futex2_wake(volatile void *uaddr, unsigned int nr, unsigned long flags)
++{
++	return syscall(__NR_futex_wake, uaddr, nr, flags);
++}
+ #endif /* _FUTEX_H */
+diff --git a/tools/perf/builtin-bench.c b/tools/perf/builtin-bench.c
+index 62a7b7420..200ecacad 100644
+--- a/tools/perf/builtin-bench.c
++++ b/tools/perf/builtin-bench.c
+@@ -12,10 +12,11 @@
+  *
+  *  sched ... scheduler and IPC performance
+  *  syscall ... System call performance
+- *  mem   ... memory access performance
+- *  numa  ... NUMA scheduling and MM performance
+- *  futex ... Futex performance
+- *  epoll ... Event poll performance
++ *  mem    ... memory access performance
++ *  numa   ... NUMA scheduling and MM performance
++ *  futex  ... Futex performance
++ *  futex2 ... Futex2 performance
++ *  epoll  ... Event poll performance
+  */
+ #include <subcmd/parse-options.h>
+ #include "builtin.h"
+@@ -75,6 +76,13 @@ static struct bench futex_benchmarks[] = {
+ 	{ NULL,		NULL,						NULL			}
+ };
+ 
++static struct bench futex2_benchmarks[] = {
++	{ "hash",	   "Benchmark for futex2 hash table",            bench_futex2_hash	},
++	{ "wake",	   "Benchmark for futex2 wake calls",            bench_futex2_wake	},
++	{ "wake-parallel", "Benchmark for parallel futex2 wake calls",   bench_futex2_wake_parallel },
++	{ NULL,		NULL,						NULL			}
++};
++
+ #ifdef HAVE_EVENTFD_SUPPORT
+ static struct bench epoll_benchmarks[] = {
+ 	{ "wait",	"Benchmark epoll concurrent epoll_waits",       bench_epoll_wait	},
+@@ -105,6 +113,7 @@ static struct collection collections[] = {
+ 	{ "numa",	"NUMA scheduling and MM benchmarks",		numa_benchmarks		},
+ #endif
+ 	{"futex",       "Futex stressing benchmarks",                   futex_benchmarks        },
++	{"futex2",      "Futex2 stressing benchmarks",                  futex2_benchmarks        },
+ #ifdef HAVE_EVENTFD_SUPPORT
+ 	{"epoll",       "Epoll stressing benchmarks",                   epoll_benchmarks        },
+ #endif
+-- 
+2.30.0
 

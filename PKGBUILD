@@ -11,8 +11,8 @@ _kernelname=-vd
 _sub=0
 _rc=rc4
 pkgver=${_basekernel}.${_sub}${_rc}
-pkgrel=2
-_archpatch=20210110
+pkgrel=3
+_archpatch=20210115
 _prjc="r2"
 _stablequeue=a1028684e3
 arch=('x86_64')
@@ -29,8 +29,7 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     # "prepatch-${_basekernel/./}-g${_stablequeue}.patch"
     #
     # Arch patches
-    0001-arch-patches510-${_archpatch}.patch
-    # 0001-arch-patches510-${_archpatch}.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.10/arch-patches-v9/0001-arch-patches.patch
+    0006-arch-patches510-${_archpatch}.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.10/arch-patches-v10/0001-arch-patches.patch
     # CPU patches
     0002-graysky-cpu-optimizations.patch
     0003-enable-O3-for-all-archs-and-add-option-for-O1.patch
@@ -49,9 +48,9 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     0011-x86-fpu-reduce-unnecessary-FNINIT-and-MXCSR-usage.patch
     # Nuvoton nc677x driver
     0012-i2c-nuvoton-nc677x-hwmon-driver-git.patch::https://gitlab.com/CalcProgrammer1/OpenRGB/-/raw/master/OpenRGB.patch
-    # kcpuid tool
-    0013-tools-x86-add-a-kcpuid-tool-to-show-raw-cpu-features-v4.patch
     # rcu fixes
+    0013-rcu-fixes-next.patch
+    # rcu fix prio boost
     0014-fix-rcu-priority-boosting.patch
     # sched idle
     0015-sched-scan-for-an-idle-sibling-in-a-single-pass.patch
@@ -75,8 +74,8 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     #
     # Project C (BMQ+PDS)
     # 3001-projectc510-${_prjc}-orig.patch::https://gitlab.com/alfredchen/linux-prjc/uploads/cda220f104bd6e07ea6fefa86c709dbe/prjc_v5.10-r2.patch
-    # CalcULE
-    # 3002-calcule-59.patch::https://raw.githubusercontent.com/hamadmarri/cacule-cpu-scheduler/master/patches/CacULE/v5.9/cacule5.9.patch
+    # CacULE
+    # 3002-cacule-59+vd510.patch
     # MuQSS
     # 3004-ck-muqss-510.patch
     #
@@ -91,11 +90,11 @@ validpgpkeys=(
 
 sha256sums=('c0712caaeff17ece2175b3079052418a5eb6a3c58008e8fa57f448245bdaca7b'
             '0c710c857a24b6591c2d813b3bd5968983cbbf770f2fc5f9a8fdeda9e69fd53a'
-            '99ad96590bb0c93ba041dd661d767c5483b4a883d4bce05cc3391c70bc6b1972'
+            'e62723a477fcda655097d87cc30df149eeaf50dbabfb27ae2ea50f87f84b5abe'
             '273294b9a9878ecc254215e53feccd9e832fbe3bac9bfe7663b08ebe6047f112'
             'ab010dc5ef6ce85d352956e5996d242246ecd0912b30f0b72025c38eadff8cd5'
             '8f357fab1c5b3e81240b543a6643fdbca1d8591f5dd18bc18e38ae992d78944c'
-            '1ca9e6f9100199740387b237360480a4e3d0b459c53afc1001c53e3ad857cdb3'
+            '231f38ea1531d2e3bfba9f5eaf521b54054acc3795272403174283b28c0ca714'
             '429b41a987aa1a3b4975474d8b3ca2817a418435f4886e747140deed978ce284'
             '3d38fc4052b999b67aaed9fe9a4ba6ffd778ffbf7e94a66d5577391dbd08d12a'
             '0a05bbb282502db210f8ab843a5c3f39b847af5303fb7bd5a8655686cf76c1b7'
@@ -107,7 +106,7 @@ sha256sums=('c0712caaeff17ece2175b3079052418a5eb6a3c58008e8fa57f448245bdaca7b'
             '9c8e25fbe47e3989fdb1864e4786e3a09d9956c10af357669e891ae2157f9915'
             '36aa4ae85159867ae7c7b70422d2908ee86541d0fc20263c8afc00608bb75d74'
             'e7d724ac15daf428aa1e6a03737e5c1d040892d55fda8a66897fcac9323f285c'
-            '080cd03dd1512e70dae5e74b4d9e14feebfd0967382a1ad09bf5416c6fa01de7'
+            'a652bf7985cd0633ee12e61efb9dd898f28468e93caa852e210923fed92724fb'
             '49b29307ee96f85db5949866fd2f5a76502dd5be7564771febfe57c807b4f740'
             '03022ad0414ee728d1cc51a7b23997beb46d8d7f53ce1773ec94cee198d8fcc1'
             '5dace545bf5047cbac01bc587ee4cf369600ee66b92d9f30f1229c00ae887ffa'
@@ -117,7 +116,9 @@ sha256sums=('c0712caaeff17ece2175b3079052418a5eb6a3c58008e8fa57f448245bdaca7b'
             '4c0beb1f181e7ee22e978f447aaccc3bd7f326e861a5afb5798922b1e7efc2ec'
             '02d2c0e6b2459d4dbd6d4cecb3b269545a78b86cc9d2d3a0fda80bb3c3ee7604'
             'a231aebaa262c60f5f0151819db4b06e92986d5c81e8e0a90e7089a0ac9d454c'
-            'fdb08f3fbfdd0ba71fbef5eed3f2617fd49214c40466a3c27e3bd0bf3861f90f')
+            'fdb08f3fbfdd0ba71fbef5eed3f2617fd49214c40466a3c27e3bd0bf3861f90f'
+            'd195d79e95f52bf33d3806d61fc262f116f1521e4c95e369c2e607c1838d0db3'
+)
 
 export KBUILD_BUILD_USER=$pkgbase
 export KBUILD_BUILD_HOST=eos
@@ -137,11 +138,11 @@ if [[ ${_clang} -eq 1 ]]; then
 	LLVMOPTS="LLVM=1 LLVM_IAS=1"
 	CLANGOPTS="CC=clang LD=ld.lld"
 	source+=('9001-objtool-fixes-jp.patch'
-	'9002-clang-lto-20210119.patch'
+	'9002-clang-lto-20210121.patch'
 	#'9003-clang-pgo-v5.patch'
 	)
 	sha256sums+=('114bdbce208c4c28a9990ba2727f6f8c9f20ef0d69eb22f7a2c1340db66ccac5'
-	'f2fcc01531907c1c0d238e432f91ccb1385cb164d0ce4c39c8fec4a222161a21'
+	'27a6d88aba5da12ab31f906c5d861a68c473dc6c84ef0721bc48d74482ea6f63'
 	#'572787bfd31621947ed965cdd64e912eb76fb7ecd84bc8af94141995ec8ebb0e'
 	)
 else

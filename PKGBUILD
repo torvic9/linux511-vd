@@ -11,7 +11,7 @@ _kernelname=-vd
 _sub=0
 _rc=rc4
 pkgver=${_basekernel}.${_sub}${_rc}
-pkgrel=3.1
+pkgrel=4
 _archpatch=20210115
 _prjc="r2"
 _stablequeue=a1028684e3
@@ -90,7 +90,7 @@ validpgpkeys=(
 
 sha256sums=('c0712caaeff17ece2175b3079052418a5eb6a3c58008e8fa57f448245bdaca7b'
             '0c710c857a24b6591c2d813b3bd5968983cbbf770f2fc5f9a8fdeda9e69fd53a'
-            '12236435b4946a58fd4ae5021a0c6decd5dbbfd5c2052f4d4971606bc4efc2e2'
+            '9c71aeee1be53abd1e154132670d599f5893f67a21165ea0a798803649735271'
             '273294b9a9878ecc254215e53feccd9e832fbe3bac9bfe7663b08ebe6047f112'
             'ab010dc5ef6ce85d352956e5996d242246ecd0912b30f0b72025c38eadff8cd5'
             '8f357fab1c5b3e81240b543a6643fdbca1d8591f5dd18bc18e38ae992d78944c'
@@ -116,7 +116,8 @@ sha256sums=('c0712caaeff17ece2175b3079052418a5eb6a3c58008e8fa57f448245bdaca7b'
             '4c0beb1f181e7ee22e978f447aaccc3bd7f326e861a5afb5798922b1e7efc2ec'
             '02d2c0e6b2459d4dbd6d4cecb3b269545a78b86cc9d2d3a0fda80bb3c3ee7604'
             'a231aebaa262c60f5f0151819db4b06e92986d5c81e8e0a90e7089a0ac9d454c'
-            'fdb08f3fbfdd0ba71fbef5eed3f2617fd49214c40466a3c27e3bd0bf3861f90f')
+            'fdb08f3fbfdd0ba71fbef5eed3f2617fd49214c40466a3c27e3bd0bf3861f90f'
+            '37eed794633ee15ca7bf5a3e1593527baf3b6be2985cafb135fc6685458ee76d')
 
 export KBUILD_BUILD_USER=$pkgbase
 export KBUILD_BUILD_HOST=eos
@@ -137,11 +138,11 @@ if [[ ${_clang} -eq 1 ]]; then
 	CLANGOPTS="CC=clang LD=ld.lld"
 	source+=('9001-objtool-fixes-jp.patch'
 	'9002-clang-lto-20210121.patch'
-	'9003-clang-pgo-v6.patch'
+	#'9003-clang-pgo-v6.patch' # pgo is still very experimental
 	)
 	sha256sums+=('114bdbce208c4c28a9990ba2727f6f8c9f20ef0d69eb22f7a2c1340db66ccac5'
 	'27a6d88aba5da12ab31f906c5d861a68c473dc6c84ef0721bc48d74482ea6f63'
-	'5b051af3ad9235268c40c60d1d5986ee49d97b7ccf7c13668d57c9a1cefa197b'
+	#'5b051af3ad9235268c40c60d1d5986ee49d97b7ccf7c13668d57c9a1cefa197b'
 	)
 else
 	LLVMOPTS=""
@@ -212,12 +213,14 @@ prepare() {
 
 build() {
   cd "${srcdir}/linux-${_basekernel}-${_rc}"
+  
   # copy pgo profile data
   # cp $srcdir/vmlinux.profdata ./
+  
   # build!
   make $LLVMOPTS LOCALVERSION= bzImage modules
   # below cmd is for using a pgo profile
-  #make $LLVMOPTS KCFLAGS=-fprofile-use=vmlinux.profdata LOCALVERSION= bzImage modules
+  # make $LLVMOPTS KCFLAGS=-fprofile-use=vmlinux.profdata LOCALVERSION= bzImage modules
 }
 
 package_linux511-vd() {

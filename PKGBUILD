@@ -78,9 +78,9 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     # Project C (BMQ+PDS)
     # 3001-projectc510-${_prjc}-orig.patch::https://gitlab.com/alfredchen/linux-prjc/uploads/cda220f104bd6e07ea6fefa86c709dbe/prjc_v5.10-r2.patch
     # CacULE
-    # 3002-cacule-59+vd511.patch
+    # 3002-cacule-510rdb.patch::https://raw.githubusercontent.com/hamadmarri/cacule-cpu-scheduler/master/patches/CacULE/v5.10/cacule5.10-rdb.patch
     # MuQSS
-    # 3004-ck-muqss-510.patch
+    # 3003-ck-muqss-510.patch
     #
     # pgo profile data
     # vmlinux.profdata

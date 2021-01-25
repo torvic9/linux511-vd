@@ -9,10 +9,10 @@ pkgname=('linux511-vd' 'linux511-vd-headers')
 _basekernel=5.11
 _kernelname=-vd
 _sub=0
-_rc=rc4
+_rc=rc5
 pkgver=${_basekernel}.${_sub}${_rc}
-pkgrel=4
-_archpatch=20210115
+pkgrel=1
+_archpatch=20210124
 _prjc="r2"
 _stablequeue=a1028684e3
 arch=('x86_64')
@@ -29,7 +29,7 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     # "prepatch-${_basekernel/./}-g${_stablequeue}.patch"
     #
     # Arch patches
-    0006-arch-patches510-${_archpatch}.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.10/arch-patches-v10/0001-arch-patches.patch
+    0001-arch-patches510-${_archpatch}.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11-rc/arch-patches-v5/0001-arch-patches.patch
     # CPU patches
     0002-graysky-cpu-optimizations.patch
     0003-enable-O3-for-all-archs-and-add-option-for-O1.patch
@@ -41,23 +41,26 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     # AMD enhancements
     0007-dma-add-support-for-amd-ptdma-controller-driver.patch
     0008-acpi-add-processor-to-the-ignore-PSD-override-list.patch
-    0009-x86-set-and-use-cpu_die_id-on-amd-based-systems.patch
+    # bfq fixes
+    0009-block-bfq-fixes-and-improvements.patch
     # tip:sched/core
     0010-tip-sched-core-20210114.patch
-    # x86 fixes
-    0011-x86-fpu-reduce-unnecessary-FNINIT-and-MXCSR-usage.patch
+    # sched idle
+    0011-sched-scan-for-an-idle-sibling-in-a-single-pass.patch
     # Nuvoton nc677x driver
     0012-i2c-nuvoton-nc677x-hwmon-driver-git.patch::https://gitlab.com/CalcProgrammer1/OpenRGB/-/raw/master/OpenRGB.patch
     # rcu fixes
     0013-rcu-fixes-next.patch
     # rcu fix prio boost
     0014-fix-rcu-priority-boosting.patch
-    # sched idle
-    0015-sched-scan-for-an-idle-sibling-in-a-single-pass.patch
+    # blk-mq fixes
+    0015-blk-mq-dont-complete-in-IRQ-use-llist_head.patch
+    # amd sensor fusion hub
+    0016-amd-sfh-driver-refactored.patch
     #
     # futex_wait_multiple
-    # 1001-futex-futex_wait_multiple-krisman.patch
-    1001-futex-valve-integ-20201126.patch
+    1001-futex-futex_wait_multiple-krisman.patch
+    # 1001-futex-valve-integ-20201126.patch
     # 1002-futex2-stable.patch # we do not yet need this
     #
     # MANJARO Patches
@@ -70,12 +73,12 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     2005-tune-cpufreq-ondemand-settings.patch
     2006-optimise-kernel-and-module-compression.patch
     # ntfs3 driver
-    2007-ntfs-rw-gpl-driver-implementation-by-paragon-v17.patch
+    2007-ntfs-rw-gpl-driver-implementation-by-paragon-v18.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11-rc/ntfs3-patches-v2/0001-ntfs3-patches.patch
     #
     # Project C (BMQ+PDS)
     # 3001-projectc510-${_prjc}-orig.patch::https://gitlab.com/alfredchen/linux-prjc/uploads/cda220f104bd6e07ea6fefa86c709dbe/prjc_v5.10-r2.patch
     # CacULE
-    # 3002-cacule-59+vd510.patch
+    # 3002-cacule-59+vd511.patch
     # MuQSS
     # 3004-ck-muqss-510.patch
     #
@@ -88,13 +91,13 @@ validpgpkeys=(
   '647F28654894E3BD457199BE38DBBDC86092693E'  # Greg Kroah-Hartman
 )
 
-sha256sums=('c0712caaeff17ece2175b3079052418a5eb6a3c58008e8fa57f448245bdaca7b'
+sha256sums=('9864eb2880ffab9b776be9f6f222015165a23d1303619a3e2ed5671b88be3609'
             '0c710c857a24b6591c2d813b3bd5968983cbbf770f2fc5f9a8fdeda9e69fd53a'
-            '9c71aeee1be53abd1e154132670d599f5893f67a21165ea0a798803649735271'
+            '12236435b4946a58fd4ae5021a0c6decd5dbbfd5c2052f4d4971606bc4efc2e2'
             '273294b9a9878ecc254215e53feccd9e832fbe3bac9bfe7663b08ebe6047f112'
             'ab010dc5ef6ce85d352956e5996d242246ecd0912b30f0b72025c38eadff8cd5'
             '8f357fab1c5b3e81240b543a6643fdbca1d8591f5dd18bc18e38ae992d78944c'
-            '231f38ea1531d2e3bfba9f5eaf521b54054acc3795272403174283b28c0ca714'
+            '8b00e83ec9b288cf308b435de432a618649ef8fc9b083f5770b7627c5772800d'
             '429b41a987aa1a3b4975474d8b3ca2817a418435f4886e747140deed978ce284'
             '3d38fc4052b999b67aaed9fe9a4ba6ffd778ffbf7e94a66d5577391dbd08d12a'
             '0a05bbb282502db210f8ab843a5c3f39b847af5303fb7bd5a8655686cf76c1b7'
@@ -102,22 +105,22 @@ sha256sums=('c0712caaeff17ece2175b3079052418a5eb6a3c58008e8fa57f448245bdaca7b'
             'b817e7da8f4901cf2dda0f2fe7b9d8243f32a42d5729e953521ef18eec7a8eb9'
             '1f47d3e3956c41b47656f675a90fad9e318c7133ffe663dc0fd2c9aa0fbfeb3e'
             '5000348583882523ef3c36df27eabf4355e83d0605081a3bf5d4aaa28e518162'
-            '2fd7357d1d5e3f3dd300287f44d021d1ed57c98228607a8a7f58a990d9fd3625'
+            'e96d2466ff31dd4555a9166bcbe5a2482e217a6ae7c66027180ccdf66eee872f'
             '9c8e25fbe47e3989fdb1864e4786e3a09d9956c10af357669e891ae2157f9915'
-            '36aa4ae85159867ae7c7b70422d2908ee86541d0fc20263c8afc00608bb75d74'
+            '03022ad0414ee728d1cc51a7b23997beb46d8d7f53ce1773ec94cee198d8fcc1'
             'e7d724ac15daf428aa1e6a03737e5c1d040892d55fda8a66897fcac9323f285c'
             'a652bf7985cd0633ee12e61efb9dd898f28468e93caa852e210923fed92724fb'
             '49b29307ee96f85db5949866fd2f5a76502dd5be7564771febfe57c807b4f740'
-            '03022ad0414ee728d1cc51a7b23997beb46d8d7f53ce1773ec94cee198d8fcc1'
-            '5dace545bf5047cbac01bc587ee4cf369600ee66b92d9f30f1229c00ae887ffa'
+            '12fdebdffb9ba9620a012eafba79162d83d13700a47af5b9feef4d91e9600d6f'
+            'a881179be827dfee0b10c704fc8e1c501683f61e8041df392b48b51cba215856'
+            'b86758554105a11900e60b1f83bd272aee8ce3af5c62a382160637844ee4f2a5'
             '7fd689f4ec88364d1ac00007e6f1e273ee9b53cae187e0f70e7f810303dc9303'
             'f7a36231b794022d49e53f464d25e48f2eebf6266c2cbe5756c63aa3bf03bae7'
             'acca50a9ffee480f29bd7de6e8b5963dc0d37d3103871d75bcffdb2acce6c82d'
             '4c0beb1f181e7ee22e978f447aaccc3bd7f326e861a5afb5798922b1e7efc2ec'
             '02d2c0e6b2459d4dbd6d4cecb3b269545a78b86cc9d2d3a0fda80bb3c3ee7604'
             'a231aebaa262c60f5f0151819db4b06e92986d5c81e8e0a90e7089a0ac9d454c'
-            'fdb08f3fbfdd0ba71fbef5eed3f2617fd49214c40466a3c27e3bd0bf3861f90f'
-            '37eed794633ee15ca7bf5a3e1593527baf3b6be2985cafb135fc6685458ee76d')
+            'd3d92b1ee6ea952c368a6b806d78a35ea400255a6abe9a0f6c24a45ecbfb90a1')
 
 export KBUILD_BUILD_USER=$pkgbase
 export KBUILD_BUILD_HOST=eos
@@ -130,18 +133,18 @@ _key="$HOME/build/keys/vd511-kernel-key.pem"
 _pubkey="$HOME/build/keys/vd511-kernel-pubkey.pem"
 
 # custom clang path
-# export PATH=/opt/clang12/bin:$PATH
+# export PATH=/opt/clang11/bin:$PATH
 _clang=0
 
 if [[ ${_clang} -eq 1 ]]; then
 	LLVMOPTS="LLVM=1 LLVM_IAS=1"
 	CLANGOPTS="CC=clang LD=ld.lld"
-	source+=('9001-objtool-fixes-jp.patch'
-	'9002-clang-lto-20210121.patch'
+	source+=('9001-objtool-fixes-jp_.patch'
+	'9002-clang-lto-20210123.patch'
 	#'9003-clang-pgo-v6.patch' # pgo is still very experimental
 	)
-	sha256sums+=('114bdbce208c4c28a9990ba2727f6f8c9f20ef0d69eb22f7a2c1340db66ccac5'
-	'27a6d88aba5da12ab31f906c5d861a68c473dc6c84ef0721bc48d74482ea6f63'
+	sha256sums+=('6facba496859c28160d5872800834af28fb152feaf07d4cfa03cf1fc611bcd67'
+	'c8f09c8449b7248bbdbaf749a114803026c3ccd5e2dc207c0b412a4d5537647f'
 	#'5b051af3ad9235268c40c60d1d5986ee49d97b7ccf7c13668d57c9a1cefa197b'
 	)
 else

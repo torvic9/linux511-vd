@@ -139,7 +139,7 @@ _clang=0
 if [[ ${_clang} -eq 1 ]]; then
 	LLVMOPTS="LLVM=1 LLVM_IAS=1"
 	CLANGOPTS="CC=clang LD=ld.lld"
-	source+=('9001-objtool-fixes-jp_.patch'
+	source+=('9001-objtool-fixes-jp.patch'
 	'9002-clang-lto-20210123.patch'
 	#'9003-clang-pgo-v6.patch' # pgo is still very experimental
 	)

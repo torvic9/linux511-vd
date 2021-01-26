@@ -11,7 +11,7 @@ _kernelname=-vd
 _sub=0
 _rc=rc5
 pkgver=${_basekernel}.${_sub}${_rc}
-pkgrel=1
+pkgrel=2
 _archpatch=20210124
 _prjc="r2"
 _stablequeue=a1028684e3
@@ -29,7 +29,7 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     # "prepatch-${_basekernel/./}-g${_stablequeue}.patch"
     #
     # Arch patches
-    0001-arch-patches510-${_archpatch}.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11-rc/arch-patches-v5/0001-arch-patches.patch
+    0001-arch-patches511-${_archpatch}.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11-rc/arch-patches-v5/0001-arch-patches.patch
     # CPU patches
     0002-graysky-cpu-optimizations.patch
     0003-enable-O3-for-all-archs-and-add-option-for-O1.patch
@@ -57,6 +57,8 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     0015-blk-mq-dont-complete-in-IRQ-use-llist_head.patch
     # amd sensor fusion hub
     0016-amd-sfh-driver-refactored.patch
+    # fs buffer fix
+    0017-fs-buffer-revoke-lru-when-trying-to-drop-buffers-v4.patch
     #
     # futex_wait_multiple
     1001-futex-futex_wait_multiple-krisman.patch
@@ -93,7 +95,7 @@ validpgpkeys=(
 
 sha256sums=('9864eb2880ffab9b776be9f6f222015165a23d1303619a3e2ed5671b88be3609'
             '29dd0f29a8001f9cf1062ee78e1e84ad7845fa0bd319dcab7ab9c5c7cb74c07c'
-            'afaa3d41e954f0ccd79ab63a57d459caef339de437fba8c01152d1c1d6a31bc7'
+            '7101547c2b3dee1580138c221bacaa26e32e70afe86bfbace152b42074660429'
             '09c81b7a8a74f7c4bcd775f28368a1d2bcae4792a7972dd7b728d132b0f04295'
             'ab010dc5ef6ce85d352956e5996d242246ecd0912b30f0b72025c38eadff8cd5'
             '8f357fab1c5b3e81240b543a6643fdbca1d8591f5dd18bc18e38ae992d78944c'
@@ -105,7 +107,7 @@ sha256sums=('9864eb2880ffab9b776be9f6f222015165a23d1303619a3e2ed5671b88be3609'
             'b817e7da8f4901cf2dda0f2fe7b9d8243f32a42d5729e953521ef18eec7a8eb9'
             '1f47d3e3956c41b47656f675a90fad9e318c7133ffe663dc0fd2c9aa0fbfeb3e'
             '5000348583882523ef3c36df27eabf4355e83d0605081a3bf5d4aaa28e518162'
-            'e96d2466ff31dd4555a9166bcbe5a2482e217a6ae7c66027180ccdf66eee872f'
+            '9e86bfb28c4c9a30a116f57c24d57cf7488df2755198425522564b4e8f8015e7'
             '9c8e25fbe47e3989fdb1864e4786e3a09d9956c10af357669e891ae2157f9915'
             '03022ad0414ee728d1cc51a7b23997beb46d8d7f53ce1773ec94cee198d8fcc1'
             'e7d724ac15daf428aa1e6a03737e5c1d040892d55fda8a66897fcac9323f285c'
@@ -113,6 +115,7 @@ sha256sums=('9864eb2880ffab9b776be9f6f222015165a23d1303619a3e2ed5671b88be3609'
             '49b29307ee96f85db5949866fd2f5a76502dd5be7564771febfe57c807b4f740'
             '12fdebdffb9ba9620a012eafba79162d83d13700a47af5b9feef4d91e9600d6f'
             'a881179be827dfee0b10c704fc8e1c501683f61e8041df392b48b51cba215856'
+            '1523298b9c29fa80ecc945982b7e450b5a9128054f91bce0fc596141ed3d1df2'
             'b86758554105a11900e60b1f83bd272aee8ce3af5c62a382160637844ee4f2a5'
             '7fd689f4ec88364d1ac00007e6f1e273ee9b53cae187e0f70e7f810303dc9303'
             'f7a36231b794022d49e53f464d25e48f2eebf6266c2cbe5756c63aa3bf03bae7'
@@ -133,7 +136,7 @@ _key="$HOME/build/keys/vd511-kernel-key.pem"
 _pubkey="$HOME/build/keys/vd511-kernel-pubkey.pem"
 
 # custom clang path
-# export PATH=/opt/clang11/bin:$PATH
+# export PATH=/opt/clang12/bin:$PATH
 _clang=0
 
 if [[ ${_clang} -eq 1 ]]; then

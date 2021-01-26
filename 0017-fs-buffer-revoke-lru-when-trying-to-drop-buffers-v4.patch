@@ -1,0 +1,166 @@
+From patchwork Tue Jan 26 06:58:30 2021
+From: Chris Goldsworthy <cgoldswo@codeaurora.org>
+To: viro@zeniv.linux.org.uk
+Cc: Matthew Wilcox <willy@infradead.org>, linux-mm@kvack.org,
+        linux-fsdevel@vger.kernel.org, linux-kernel@vger.kernel.org,
+        Laura Abbott <lauraa@codeaurora.org>,
+        Chris Goldsworthy <cgoldswo@codeaurora.org>
+Subject: [PATCH v4] fs/buffer.c: Revoke LRU when trying to drop buffers
+Date: Mon, 25 Jan 2021 22:58:30 -0800
+X-Mailing-List: linux-kernel@vger.kernel.org
+
+From: Laura Abbott <lauraa@codeaurora.org>
+
+When a buffer is added to the LRU list, a reference is taken which is
+not dropped until the buffer is evicted from the LRU list. This is the
+correct behavior, however this LRU reference will prevent the buffer
+from being dropped. This means that the buffer can't actually be dropped
+until it is selected for eviction. There's no bound on the time spent
+on the LRU list, which means that the buffer may be undroppable for
+very long periods of time. Given that migration involves dropping
+buffers, the associated page is now unmigratible for long periods of
+time as well. CMA relies on being able to migrate a specific range
+of pages, so these types of failures make CMA significantly
+less reliable, especially under high filesystem usage.
+
+Rather than waiting for the LRU algorithm to eventually kick out
+the buffer, explicitly remove the buffer from the LRU list when trying
+to drop it. There is still the possibility that the buffer
+could be added back on the list, but that indicates the buffer is
+still in use and would probably have other 'in use' indicates to
+prevent dropping.
+
+Note: a bug reported by "kernel test robot" lead to a switch from
+using xas_for_each() to xa_for_each().
+
+Signed-off-by: Laura Abbott <lauraa@codeaurora.org>
+Signed-off-by: Chris Goldsworthy <cgoldswo@codeaurora.org>
+Cc: Matthew Wilcox <willy@infradead.org>
+Reported-by: kernel test robot <oliver.sang@intel.com>
+---
+ fs/buffer.c | 79 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++----
+ 1 file changed, 74 insertions(+), 5 deletions(-)
+
+diff --git a/fs/buffer.c b/fs/buffer.c
+index 96c7604..27516a0 100644
+--- a/fs/buffer.c
++++ b/fs/buffer.c
+@@ -48,6 +48,7 @@
+ #include <linux/sched/mm.h>
+ #include <trace/events/block.h>
+ #include <linux/fscrypt.h>
++#include <linux/xarray.h>
+ 
+ #include "internal.h"
+ 
+@@ -1471,12 +1472,55 @@ static bool has_bh_in_lru(int cpu, void *dummy)
+ 	return false;
+ }
+ 
++static void __evict_bhs_lru(void *arg)
++{
++	struct bh_lru *b = &get_cpu_var(bh_lrus);
++	struct xarray *busy_bhs = arg;
++	struct buffer_head *bh;
++	unsigned long i, xarray_index;
++
++	xa_for_each(busy_bhs, xarray_index, bh) {
++		for (i = 0; i < BH_LRU_SIZE; i++) {
++			if (b->bhs[i] == bh) {
++				brelse(b->bhs[i]);
++				b->bhs[i] = NULL;
++				break;
++			}
++		}
++	}
++
++	put_cpu_var(bh_lrus);
++}
++
++static bool page_has_bhs_in_lru(int cpu, void *arg)
++{
++	struct bh_lru *b = per_cpu_ptr(&bh_lrus, cpu);
++	struct xarray *busy_bhs = arg;
++	struct buffer_head *bh;
++	unsigned long i, xarray_index;
++
++	xa_for_each(busy_bhs, xarray_index, bh) {
++		for (i = 0; i < BH_LRU_SIZE; i++) {
++			if (b->bhs[i] == bh)
++				return true;
++		}
++	}
++
++	return false;
++
++}
+ void invalidate_bh_lrus(void)
+ {
+ 	on_each_cpu_cond(has_bh_in_lru, invalidate_bh_lru, NULL, 1);
+ }
+ EXPORT_SYMBOL_GPL(invalidate_bh_lrus);
+ 
++static void evict_bh_lrus(struct xarray *busy_bhs)
++{
++	on_each_cpu_cond(page_has_bhs_in_lru, __evict_bhs_lru,
++			 busy_bhs, 1);
++}
++
+ void set_bh_page(struct buffer_head *bh,
+ 		struct page *page, unsigned long offset)
+ {
+@@ -3242,14 +3286,38 @@ drop_buffers(struct page *page, struct buffer_head **buffers_to_free)
+ {
+ 	struct buffer_head *head = page_buffers(page);
+ 	struct buffer_head *bh;
++	struct xarray busy_bhs;
++	int bh_count = 0;
++	int xa_ret, ret = 0;
++
++	xa_init(&busy_bhs);
+ 
+ 	bh = head;
+ 	do {
+-		if (buffer_busy(bh))
+-			goto failed;
++		if (buffer_busy(bh)) {
++			xa_ret = xa_err(xa_store(&busy_bhs, bh_count++,
++						 bh, GFP_ATOMIC));
++			if (xa_ret)
++				goto out;
++		}
+ 		bh = bh->b_this_page;
+ 	} while (bh != head);
+ 
++	if (bh_count) {
++		/*
++		 * Check if the busy failure was due to an outstanding
++		 * LRU reference
++		 */
++		evict_bh_lrus(&busy_bhs);
++		do {
++			if (buffer_busy(bh))
++				goto out;
++
++			bh = bh->b_this_page;
++		} while (bh != head);
++	}
++
++	ret = 1;
+ 	do {
+ 		struct buffer_head *next = bh->b_this_page;
+ 
+@@ -3259,9 +3327,10 @@ drop_buffers(struct page *page, struct buffer_head **buffers_to_free)
+ 	} while (bh != head);
+ 	*buffers_to_free = head;
+ 	detach_page_private(page);
+-	return 1;
+-failed:
+-	return 0;
++out:
++	xa_destroy(&busy_bhs);
++
++	return ret;
+ }
+ 
+ int try_to_free_buffers(struct page *page)

@@ -11,7 +11,7 @@ _kernelname=-vd
 _sub=0
 _rc=rc5
 pkgver=${_basekernel}.${_sub}${_rc}
-pkgrel=2
+pkgrel=3
 _archpatch=20210124
 _prjc="r2"
 _stablequeue=a1028684e3
@@ -61,8 +61,8 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     0017-fs-buffer-revoke-lru-when-trying-to-drop-buffers-v4.patch
     #
     # futex_wait_multiple
-    1001-futex-futex_wait_multiple-krisman.patch
-    # 1001-futex-valve-integ-20201126.patch
+    # 1001-futex-futex_wait_multiple-krisman.patch
+    1001-futex-valve-integ-20201126.patch
     # 1002-futex2-stable.patch # we do not yet need this
     #
     # MANJARO Patches
@@ -75,7 +75,7 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     2005-tune-cpufreq-ondemand-settings.patch
     2006-optimise-kernel-and-module-compression.patch
     # ntfs3 driver
-    2007-ntfs-rw-gpl-driver-implementation-by-paragon-v18.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11-rc/ntfs3-patches-v2/0001-ntfs3-patches.patch
+    2007-ntfs-rw-gpl-driver-implementation-by-paragon-v19.patch
     #
     # Project C (BMQ+PDS)
     # 3001-projectc510-${_prjc}-orig.patch::https://gitlab.com/alfredchen/linux-prjc/uploads/cda220f104bd6e07ea6fefa86c709dbe/prjc_v5.10-r2.patch
@@ -116,14 +116,14 @@ sha256sums=('9864eb2880ffab9b776be9f6f222015165a23d1303619a3e2ed5671b88be3609'
             '12fdebdffb9ba9620a012eafba79162d83d13700a47af5b9feef4d91e9600d6f'
             'a881179be827dfee0b10c704fc8e1c501683f61e8041df392b48b51cba215856'
             '1523298b9c29fa80ecc945982b7e450b5a9128054f91bce0fc596141ed3d1df2'
-            'b86758554105a11900e60b1f83bd272aee8ce3af5c62a382160637844ee4f2a5'
+            '5dace545bf5047cbac01bc587ee4cf369600ee66b92d9f30f1229c00ae887ffa'
             '7fd689f4ec88364d1ac00007e6f1e273ee9b53cae187e0f70e7f810303dc9303'
             'f7a36231b794022d49e53f464d25e48f2eebf6266c2cbe5756c63aa3bf03bae7'
             'acca50a9ffee480f29bd7de6e8b5963dc0d37d3103871d75bcffdb2acce6c82d'
             '4c0beb1f181e7ee22e978f447aaccc3bd7f326e861a5afb5798922b1e7efc2ec'
             '02d2c0e6b2459d4dbd6d4cecb3b269545a78b86cc9d2d3a0fda80bb3c3ee7604'
             'a231aebaa262c60f5f0151819db4b06e92986d5c81e8e0a90e7089a0ac9d454c'
-            'd3d92b1ee6ea952c368a6b806d78a35ea400255a6abe9a0f6c24a45ecbfb90a1')
+            '4c21cd75dd5a7c2bb595fe9b409f310fdbd430707843588f6d73df1a289c01a2')
 
 export KBUILD_BUILD_USER=$pkgbase
 export KBUILD_BUILD_HOST=eos

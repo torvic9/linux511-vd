@@ -11,7 +11,7 @@ _kernelname=-vd
 _sub=0
 _rc=rc5
 pkgver=${_basekernel}.${_sub}${_rc}
-pkgrel=3
+pkgrel=33
 _archpatch=20210124
 _prjc="r2"
 _stablequeue=a1028684e3
@@ -44,21 +44,21 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     # bfq fixes
     0009-block-bfq-fixes-and-improvements.patch
     # tip:sched/core
-    0010-tip-sched-core-20210114.patch
-    # sched idle
-    0011-sched-scan-for-an-idle-sibling-in-a-single-pass.patch
-    # Nuvoton nc677x driver
-    0012-i2c-nuvoton-nc677x-hwmon-driver-git.patch::https://gitlab.com/CalcProgrammer1/OpenRGB/-/raw/master/OpenRGB.patch
-    # rcu fixes
-    0013-rcu-fixes-next.patch
-    # rcu fix prio boost
-    0014-fix-rcu-priority-boosting.patch
+    0010-tip-sched-core-20210127.patch
     # blk-mq fixes
-    0015-blk-mq-dont-complete-in-IRQ-use-llist_head.patch
-    # amd sensor fusion hub
-    0016-amd-sfh-driver-refactored.patch
+    0011-blk-mq-dont-complete-in-IRQ-use-llist_head.patch
+    # sched balance tweaks
+    0012-sched-fair-misfit-task-load-balance-tweaks.patch
+    # Nuvoton nc677x driver
+    0013-i2c-nuvoton-nc677x-hwmon-driver-git.patch::https://gitlab.com/CalcProgrammer1/OpenRGB/-/raw/master/OpenRGB.patch
+    # rcu fixes
+    0014-rcu-fixes-next.patch
+    # rcu fix prio boost
+    0015-fix-rcu-priority-boosting.patch
     # fs buffer fix
-    0017-fs-buffer-revoke-lru-when-trying-to-drop-buffers-v4.patch
+    0016-fs-buffer-revoke-lru-when-trying-to-drop-buffers-v4.patch
+    # amd sensor fusion hub
+    0017-amd-sfh-driver-refactored.patch
     #
     # futex_wait_multiple
     # 1001-futex-futex_wait_multiple-krisman.patch
@@ -108,14 +108,14 @@ sha256sums=('9864eb2880ffab9b776be9f6f222015165a23d1303619a3e2ed5671b88be3609'
             '1f47d3e3956c41b47656f675a90fad9e318c7133ffe663dc0fd2c9aa0fbfeb3e'
             '5000348583882523ef3c36df27eabf4355e83d0605081a3bf5d4aaa28e518162'
             '9e86bfb28c4c9a30a116f57c24d57cf7488df2755198425522564b4e8f8015e7'
-            '9c8e25fbe47e3989fdb1864e4786e3a09d9956c10af357669e891ae2157f9915'
-            '03022ad0414ee728d1cc51a7b23997beb46d8d7f53ce1773ec94cee198d8fcc1'
+            'ad4f9dde0acda23826a468241bf962b39149ec288f08fb0b058436649bdd75d4'
+            '12fdebdffb9ba9620a012eafba79162d83d13700a47af5b9feef4d91e9600d6f'
+            '13acb14484a79496a07f65831686887854c89ed50d662682052fb025d99c5b5e'
             'e7d724ac15daf428aa1e6a03737e5c1d040892d55fda8a66897fcac9323f285c'
             'a652bf7985cd0633ee12e61efb9dd898f28468e93caa852e210923fed92724fb'
             '49b29307ee96f85db5949866fd2f5a76502dd5be7564771febfe57c807b4f740'
-            '12fdebdffb9ba9620a012eafba79162d83d13700a47af5b9feef4d91e9600d6f'
-            'a881179be827dfee0b10c704fc8e1c501683f61e8041df392b48b51cba215856'
             '1523298b9c29fa80ecc945982b7e450b5a9128054f91bce0fc596141ed3d1df2'
+            'a881179be827dfee0b10c704fc8e1c501683f61e8041df392b48b51cba215856'
             '5dace545bf5047cbac01bc587ee4cf369600ee66b92d9f30f1229c00ae887ffa'
             '7fd689f4ec88364d1ac00007e6f1e273ee9b53cae187e0f70e7f810303dc9303'
             'f7a36231b794022d49e53f464d25e48f2eebf6266c2cbe5756c63aa3bf03bae7'
@@ -144,11 +144,11 @@ if [[ ${_clang} -eq 1 ]]; then
 	CLANGOPTS="CC=clang LD=ld.lld"
 	source+=('9001-objtool-fixes-jp.patch'
 	'9002-clang-lto-20210123.patch'
-	#'9003-clang-pgo-v6.patch' # pgo is still very experimental
+	'9003-clang-pgo-v7.patch' # pgo is still very experimental
 	)
 	sha256sums+=('6facba496859c28160d5872800834af28fb152feaf07d4cfa03cf1fc611bcd67'
 	'c8f09c8449b7248bbdbaf749a114803026c3ccd5e2dc207c0b412a4d5537647f'
-	#'5b051af3ad9235268c40c60d1d5986ee49d97b7ccf7c13668d57c9a1cefa197b'
+	'ea2b7feb663faa177a8aad36f99e68cffc4a95ce7a0fd321a0d7c86cb66204ea'
 	)
 else
 	LLVMOPTS=""
@@ -219,14 +219,15 @@ prepare() {
 
 build() {
   cd "${srcdir}/linux-${_basekernel}-${_rc}"
-  
+
   # copy pgo profile data
   # cp $srcdir/vmlinux.profdata ./
-  
+
   # build!
   make $LLVMOPTS LOCALVERSION= bzImage modules
-  # below cmd is for using a pgo profile
+  # below cmd is for using a pgo profile, 1st without LTO, 2nd with LTO
   # make $LLVMOPTS KCFLAGS=-fprofile-use=vmlinux.profdata LOCALVERSION= bzImage modules
+  # make $LLVMOPTS KCFLAGS=-lto-cs-profile-file=vmlinux.profdata LOCALVERSION= bzImage modules
 }
 
 package_linux511-vd() {

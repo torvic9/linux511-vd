@@ -1,0 +1,751 @@
+From patchwork Thu Jan 28 18:31:34 2021
+From: Valentin Schneider <valentin.schneider@arm.com>
+To: linux-kernel@vger.kernel.org
+Cc: Peter Zijlstra <peterz@infradead.org>,
+        Ingo Molnar <mingo@kernel.org>,
+        Vincent Guittot <vincent.guittot@linaro.org>,
+        Dietmar Eggemann <dietmar.eggemann@arm.com>,
+        Morten Rasmussen <morten.rasmussen@arm.com>,
+        Qais Yousef <qais.yousef@arm.com>,
+        Quentin Perret <qperret@google.com>,
+        Pavan Kondeti <pkondeti@codeaurora.org>,
+        Rik van Riel <riel@surriel.com>
+Subject: [PATCH 1/8] sched/fair: Clean up active balance nr_balance_failed
+ trickery
+Date: Thu, 28 Jan 2021 18:31:34 +0000
+X-Mailing-List: linux-kernel@vger.kernel.org
+
+When triggering an active load balance, sd->nr_balance_failed is set to
+such a value that any further can_migrate_task() using said sd will ignore
+the output of task_hot().
+
+This behaviour makes sense, as active load balance intentionally preempts a
+rq's running task to migrate it right away, but this asynchronous write is
+a bit shoddy, as the stopper thread might run active_load_balance_cpu_stop
+before the sd->nr_balance_failed write either becomes visible to the
+stopper's CPU or even happens on the CPU that appended the stopper work.
+
+Add a struct lb_env flag to denote active balancing, and use it in
+can_migrate_task(). Remove the sd->nr_balance_failed write that served the
+same purpose.
+
+Signed-off-by: Valentin Schneider <valentin.schneider@arm.com>
+---
+ kernel/sched/fair.c | 17 ++++++++++-------
+ 1 file changed, 10 insertions(+), 7 deletions(-)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 197a51473e0c..0f6a4e58ce3c 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -7423,6 +7423,7 @@ enum migration_type {
+ #define LBF_SOME_PINNED	0x08
+ #define LBF_NOHZ_STATS	0x10
+ #define LBF_NOHZ_AGAIN	0x20
++#define LBF_ACTIVE_LB	0x40
+ 
+ struct lb_env {
+ 	struct sched_domain	*sd;
+@@ -7608,10 +7609,14 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
+ 
+ 	/*
+ 	 * Aggressive migration if:
+-	 * 1) destination numa is preferred
+-	 * 2) task is cache cold, or
+-	 * 3) too many balance attempts have failed.
++	 * 1) active balance
++	 * 2) destination numa is preferred
++	 * 3) task is cache cold, or
++	 * 4) too many balance attempts have failed.
+ 	 */
++	if (env->flags & LBF_ACTIVE_LB)
++		return 1;
++
+ 	tsk_cache_hot = migrate_degrades_locality(p, env);
+ 	if (tsk_cache_hot == -1)
+ 		tsk_cache_hot = task_hot(p, env);
+@@ -9805,9 +9810,6 @@ static int load_balance(int this_cpu, struct rq *this_rq,
+ 					active_load_balance_cpu_stop, busiest,
+ 					&busiest->active_balance_work);
+ 			}
+-
+-			/* We've kicked active balancing, force task migration. */
+-			sd->nr_balance_failed = sd->cache_nice_tries+1;
+ 		}
+ 	} else {
+ 		sd->nr_balance_failed = 0;
+@@ -9963,7 +9965,8 @@ static int active_load_balance_cpu_stop(void *data)
+ 			 * @dst_grpmask we need to make that test go away with lying
+ 			 * about DST_PINNED.
+ 			 */
+-			.flags		= LBF_DST_PINNED,
++			.flags		= LBF_DST_PINNED |
++					  LBF_ACTIVE_LB,
+ 		};
+ 
+ 		schedstat_inc(sd->alb_count);
+
+From patchwork Thu Jan 28 18:31:35 2021
+From: Valentin Schneider <valentin.schneider@arm.com>
+To: linux-kernel@vger.kernel.org
+Cc: Rik van Riel <riel@surriel.com>,
+        Peter Zijlstra <peterz@infradead.org>,
+        Ingo Molnar <mingo@kernel.org>,
+        Vincent Guittot <vincent.guittot@linaro.org>,
+        Dietmar Eggemann <dietmar.eggemann@arm.com>,
+        Morten Rasmussen <morten.rasmussen@arm.com>,
+        Qais Yousef <qais.yousef@arm.com>,
+        Quentin Perret <qperret@google.com>,
+        Pavan Kondeti <pkondeti@codeaurora.org>
+Subject: [PATCH 2/8] sched/fair: Add more sched_asym_cpucapacity static branch
+ checks
+Date: Thu, 28 Jan 2021 18:31:35 +0000
+X-Mailing-List: linux-kernel@vger.kernel.org
+
+Rik noted a while back that a handful of
+
+  sd->flags & SD_ASYM_CPUCAPACITY
+
+& family in the CFS load-balancer code aren't guarded by the
+sched_asym_cpucapacity static branch.
+
+The load-balancer is already doing a humongous amount of work, but turning
+those checks into NOPs for those who don't need it is fairly
+straightforward, so do that.
+
+Suggested-by: Rik van Riel <riel@surriel.com>
+Signed-off-by: Valentin Schneider <valentin.schneider@arm.com>
+---
+ kernel/sched/fair.c  | 11 ++++++-----
+ kernel/sched/sched.h |  6 ++++++
+ 2 files changed, 12 insertions(+), 5 deletions(-)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 0f6a4e58ce3c..7d01fa0bfc7e 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -8465,7 +8465,7 @@ static inline void update_sg_lb_stats(struct lb_env *env,
+ 			continue;
+ 
+ 		/* Check for a misfit task on the cpu */
+-		if (env->sd->flags & SD_ASYM_CPUCAPACITY &&
++		if (sd_has_asym_cpucapacity(env->sd) &&
+ 		    sgs->group_misfit_task_load < rq->misfit_task_load) {
+ 			sgs->group_misfit_task_load = rq->misfit_task_load;
+ 			*sg_status |= SG_OVERLOAD;
+@@ -8522,7 +8522,8 @@ static bool update_sd_pick_busiest(struct lb_env *env,
+ 	 * CPUs in the group should either be possible to resolve
+ 	 * internally or be covered by avg_load imbalance (eventually).
+ 	 */
+-	if (sgs->group_type == group_misfit_task &&
++	if (static_branch_unlikely(&sched_asym_cpucapacity) &&
++	    sgs->group_type == group_misfit_task &&
+ 	    (!group_smaller_max_cpu_capacity(sg, sds->local) ||
+ 	     sds->local_stat.group_type != group_has_spare))
+ 		return false;
+@@ -8605,7 +8606,7 @@ static bool update_sd_pick_busiest(struct lb_env *env,
+ 	 * throughput. Maximize throughput, power/energy consequences are not
+ 	 * considered.
+ 	 */
+-	if ((env->sd->flags & SD_ASYM_CPUCAPACITY) &&
++	if (sd_has_asym_cpucapacity(env->sd) &&
+ 	    (sgs->group_type <= group_fully_busy) &&
+ 	    (group_smaller_min_cpu_capacity(sds->local, sg)))
+ 		return false;
+@@ -8728,7 +8729,7 @@ static inline void update_sg_wakeup_stats(struct sched_domain *sd,
+ 	}
+ 
+ 	/* Check if task fits in the group */
+-	if (sd->flags & SD_ASYM_CPUCAPACITY &&
++	if (sd_has_asym_cpucapacity(sd) &&
+ 	    !task_fits_capacity(p, group->sgc->max_capacity)) {
+ 		sgs->group_misfit_task_load = 1;
+ 	}
+@@ -9419,7 +9420,7 @@ static struct rq *find_busiest_queue(struct lb_env *env,
+ 		 * Higher per-CPU capacity is considered better than balancing
+ 		 * average load.
+ 		 */
+-		if (env->sd->flags & SD_ASYM_CPUCAPACITY &&
++		if (sd_has_asym_cpucapacity(env->sd) &&
+ 		    capacity_of(env->dst_cpu) < capacity &&
+ 		    nr_running == 1)
+ 			continue;
+diff --git a/kernel/sched/sched.h b/kernel/sched/sched.h
+index 045b01064c1e..21bd71f58c06 100644
+--- a/kernel/sched/sched.h
++++ b/kernel/sched/sched.h
+@@ -1482,6 +1482,12 @@ DECLARE_PER_CPU(struct sched_domain __rcu *, sd_asym_packing);
+ DECLARE_PER_CPU(struct sched_domain __rcu *, sd_asym_cpucapacity);
+ extern struct static_key_false sched_asym_cpucapacity;
+ 
++static inline bool sd_has_asym_cpucapacity(struct sched_domain *sd)
++{
++	return static_branch_unlikely(&sched_asym_cpucapacity) &&
++		sd->flags & SD_ASYM_CPUCAPACITY;
++}
++
+ struct sched_group_capacity {
+ 	atomic_t		ref;
+ 	/*
+
+From patchwork Thu Jan 28 18:31:36 2021
+From: Valentin Schneider <valentin.schneider@arm.com>
+To: linux-kernel@vger.kernel.org
+Cc: Peter Zijlstra <peterz@infradead.org>,
+        Ingo Molnar <mingo@kernel.org>,
+        Vincent Guittot <vincent.guittot@linaro.org>,
+        Dietmar Eggemann <dietmar.eggemann@arm.com>,
+        Morten Rasmussen <morten.rasmussen@arm.com>,
+        Qais Yousef <qais.yousef@arm.com>,
+        Quentin Perret <qperret@google.com>,
+        Pavan Kondeti <pkondeti@codeaurora.org>,
+        Rik van Riel <riel@surriel.com>
+Subject: [PATCH 3/8] sched/fair: Tweak misfit-related capacity checks
+Date: Thu, 28 Jan 2021 18:31:36 +0000
+X-Mailing-List: linux-kernel@vger.kernel.org
+
+During load-balance, groups classified as group_misfit_task are filtered
+out if they do not pass
+
+  group_smaller_max_cpu_capacity(<candidate group>, <local group>);
+
+which itself employs fits_capacity() to compare the sgc->max_capacity of
+both groups.
+
+Due to the underlying margin, fits_capacity(X, 1024) will return false for
+any X > 819. Tough luck, the capacity_orig's on e.g. the Pixel 4 are
+{261, 871, 1024}. If a CPU-bound task ends up on one of those "medium"
+CPUs, misfit migration will never intentionally upmigrate it to a CPU of
+higher capacity due to the aforementioned margin.
+
+One may argue the 20% margin of fits_capacity() is excessive in the advent
+of counter-enhanced load tracking (APERF/MPERF, AMUs), but one point here
+is that fits_capacity() is meant to compare a utilization value to a
+capacity value, whereas here it is being used to compare two capacity
+values. As CPU capacity and task utilization have different dynamics, a
+sensible approach here would be to add a new helper dedicated to comparing
+CPU capacities.
+
+Introduce capacity_greater(), which uses a 5% margin. Use it to replace the
+existing capacity checks. Note that check_cpu_capacity() uses yet another
+margin (sd->imbalance_pct), and is left alone for now.
+
+Signed-off-by: Valentin Schneider <valentin.schneider@arm.com>
+---
+ kernel/sched/fair.c | 15 +++++++++++----
+ 1 file changed, 11 insertions(+), 4 deletions(-)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 7d01fa0bfc7e..58ce0b22fcb0 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -113,6 +113,13 @@ int __weak arch_asym_cpu_priority(int cpu)
+  */
+ #define fits_capacity(cap, max)	((cap) * 1280 < (max) * 1024)
+ 
++/*
++ * The margin used when comparing CPU capacities.
++ * is 'cap' noticeably greater than 'ref'
++ *
++ * (default: ~5%)
++ */
++#define capacity_greater(cap, ref) ((ref) * 1078 < (cap) * 1024)
+ #endif
+ 
+ #ifdef CONFIG_CFS_BANDWIDTH
+@@ -8253,7 +8260,7 @@ check_cpu_capacity(struct rq *rq, struct sched_domain *sd)
+ static inline int check_misfit_status(struct rq *rq, struct sched_domain *sd)
+ {
+ 	return rq->misfit_task_load &&
+-		(rq->cpu_capacity_orig < rq->rd->max_cpu_capacity ||
++		(capacity_greater(rq->rd->max_cpu_capacity, rq->cpu_capacity_orig) ||
+ 		 check_cpu_capacity(rq, sd));
+ }
+ 
+@@ -8352,7 +8359,7 @@ group_is_overloaded(unsigned int imbalance_pct, struct sg_lb_stats *sgs)
+ static inline bool
+ group_smaller_min_cpu_capacity(struct sched_group *sg, struct sched_group *ref)
+ {
+-	return fits_capacity(sg->sgc->min_capacity, ref->sgc->min_capacity);
++	return capacity_greater(ref->sgc->min_capacity, sg->sgc->min_capacity);
+ }
+ 
+ /*
+@@ -8362,7 +8369,7 @@ group_smaller_min_cpu_capacity(struct sched_group *sg, struct sched_group *ref)
+ static inline bool
+ group_smaller_max_cpu_capacity(struct sched_group *sg, struct sched_group *ref)
+ {
+-	return fits_capacity(sg->sgc->max_capacity, ref->sgc->max_capacity);
++	return capacity_greater(ref->sgc->max_capacity, sg->sgc->max_capacity);
+ }
+ 
+ static inline enum
+@@ -9421,7 +9428,7 @@ static struct rq *find_busiest_queue(struct lb_env *env,
+ 		 * average load.
+ 		 */
+ 		if (sd_has_asym_cpucapacity(env->sd) &&
+-		    capacity_of(env->dst_cpu) < capacity &&
++		    !capacity_greater(capacity_of(env->dst_cpu), capacity) &&
+ 		    nr_running == 1)
+ 			continue;
+ 
+
+From patchwork Thu Jan 28 18:31:37 2021
+From: Valentin Schneider <valentin.schneider@arm.com>
+To: linux-kernel@vger.kernel.org
+Cc: Peter Zijlstra <peterz@infradead.org>,
+        Ingo Molnar <mingo@kernel.org>,
+        Vincent Guittot <vincent.guittot@linaro.org>,
+        Dietmar Eggemann <dietmar.eggemann@arm.com>,
+        Morten Rasmussen <morten.rasmussen@arm.com>,
+        Qais Yousef <qais.yousef@arm.com>,
+        Quentin Perret <qperret@google.com>,
+        Pavan Kondeti <pkondeti@codeaurora.org>,
+        Rik van Riel <riel@surriel.com>
+Subject: [PATCH 4/8] sched/fair: Use dst_cpu's capacity rather than group
+ {min, max} capacity
+Date: Thu, 28 Jan 2021 18:31:37 +0000
+X-Mailing-List: linux-kernel@vger.kernel.org
+
+Comparing capacity extrema of local and source sched_group's doesn't make
+much sense when at the day of the day the imbalance will be pulled by a
+known env->dst_cpu, whose capacity can be anywhere within the local group's
+capacity extrema.
+
+Replace group_smaller_{min, max}_cpu_capacity() with comparisons of the
+source group's min/max capacity and the destination CPU's capacity.
+
+Signed-off-by: Valentin Schneider <valentin.schneider@arm.com>
+---
+ kernel/sched/fair.c | 31 +++----------------------------
+ 1 file changed, 3 insertions(+), 28 deletions(-)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 58ce0b22fcb0..0959a770ecc0 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -8352,26 +8352,6 @@ group_is_overloaded(unsigned int imbalance_pct, struct sg_lb_stats *sgs)
+ 	return false;
+ }
+ 
+-/*
+- * group_smaller_min_cpu_capacity: Returns true if sched_group sg has smaller
+- * per-CPU capacity than sched_group ref.
+- */
+-static inline bool
+-group_smaller_min_cpu_capacity(struct sched_group *sg, struct sched_group *ref)
+-{
+-	return capacity_greater(ref->sgc->min_capacity, sg->sgc->min_capacity);
+-}
+-
+-/*
+- * group_smaller_max_cpu_capacity: Returns true if sched_group sg has smaller
+- * per-CPU capacity_orig than sched_group ref.
+- */
+-static inline bool
+-group_smaller_max_cpu_capacity(struct sched_group *sg, struct sched_group *ref)
+-{
+-	return capacity_greater(ref->sgc->max_capacity, sg->sgc->max_capacity);
+-}
+-
+ static inline enum
+ group_type group_classify(unsigned int imbalance_pct,
+ 			  struct sched_group *group,
+@@ -8523,15 +8503,10 @@ static bool update_sd_pick_busiest(struct lb_env *env,
+ 	if (!sgs->sum_h_nr_running)
+ 		return false;
+ 
+-	/*
+-	 * Don't try to pull misfit tasks we can't help.
+-	 * We can use max_capacity here as reduction in capacity on some
+-	 * CPUs in the group should either be possible to resolve
+-	 * internally or be covered by avg_load imbalance (eventually).
+-	 */
++	/* Don't try to pull misfit tasks we can't help */
+ 	if (static_branch_unlikely(&sched_asym_cpucapacity) &&
+ 	    sgs->group_type == group_misfit_task &&
+-	    (!group_smaller_max_cpu_capacity(sg, sds->local) ||
++	    (!capacity_greater(capacity_of(env->dst_cpu), sg->sgc->max_capacity) ||
+ 	     sds->local_stat.group_type != group_has_spare))
+ 		return false;
+ 
+@@ -8615,7 +8590,7 @@ static bool update_sd_pick_busiest(struct lb_env *env,
+ 	 */
+ 	if (sd_has_asym_cpucapacity(env->sd) &&
+ 	    (sgs->group_type <= group_fully_busy) &&
+-	    (group_smaller_min_cpu_capacity(sds->local, sg)))
++	    (capacity_greater(sg->sgc->min_capacity, capacity_of(env->dst_cpu))))
+ 		return false;
+ 
+ 	return true;
+
+From patchwork Thu Jan 28 18:31:38 2021
+From: Valentin Schneider <valentin.schneider@arm.com>
+To: linux-kernel@vger.kernel.org
+Cc: Peter Zijlstra <peterz@infradead.org>,
+        Ingo Molnar <mingo@kernel.org>,
+        Vincent Guittot <vincent.guittot@linaro.org>,
+        Dietmar Eggemann <dietmar.eggemann@arm.com>,
+        Morten Rasmussen <morten.rasmussen@arm.com>,
+        Qais Yousef <qais.yousef@arm.com>,
+        Quentin Perret <qperret@google.com>,
+        Pavan Kondeti <pkondeti@codeaurora.org>,
+        Rik van Riel <riel@surriel.com>
+Subject: [PATCH 5/8] sched/fair: Make check_misfit_status() only compare
+ dynamic capacities
+Date: Thu, 28 Jan 2021 18:31:38 +0000
+X-Mailing-List: linux-kernel@vger.kernel.org
+
+check_misfit_status() checks for both capacity pressure & available CPUs
+with higher capacity. Now that we have a sane(ish) capacity comparison
+margin which is used throughout load-balance, this can be condensed into a
+single check:
+
+  capacity_greater(<root_domain max capacity>, <misfit task CPU's capacity>);
+
+This has the added benefit of returning false if the misfit task CPU's is
+heavily pressured, but there are no better candidates for migration.
+
+Signed-off-by: Valentin Schneider <valentin.schneider@arm.com>
+---
+ kernel/sched/fair.c | 10 ++++------
+ 1 file changed, 4 insertions(+), 6 deletions(-)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 0959a770ecc0..ef44474b8fbf 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -8254,14 +8254,12 @@ check_cpu_capacity(struct rq *rq, struct sched_domain *sd)
+ 
+ /*
+  * Check whether a rq has a misfit task and if it looks like we can actually
+- * help that task: we can migrate the task to a CPU of higher capacity, or
+- * the task's current CPU is heavily pressured.
++ * help that task: we can migrate the task to a CPU of higher capacity.
+  */
+-static inline int check_misfit_status(struct rq *rq, struct sched_domain *sd)
++static inline int check_misfit_status(struct rq *rq)
+ {
+ 	return rq->misfit_task_load &&
+-		(capacity_greater(rq->rd->max_cpu_capacity, rq->cpu_capacity_orig) ||
+-		 check_cpu_capacity(rq, sd));
++		capacity_greater(rq->rd->max_cpu_capacity, rq->cpu_capacity);
+ }
+ 
+ /*
+@@ -10238,7 +10236,7 @@ static void nohz_balancer_kick(struct rq *rq)
+ 		 * When ASYM_CPUCAPACITY; see if there's a higher capacity CPU
+ 		 * to run the misfit task on.
+ 		 */
+-		if (check_misfit_status(rq, sd)) {
++		if (check_misfit_status(rq)) {
+ 			flags = NOHZ_KICK_MASK;
+ 			goto unlock;
+ 		}
+
+From patchwork Thu Jan 28 18:31:39 2021
+From: Valentin Schneider <valentin.schneider@arm.com>
+To: linux-kernel@vger.kernel.org
+Cc: Peter Zijlstra <peterz@infradead.org>,
+        Ingo Molnar <mingo@kernel.org>,
+        Vincent Guittot <vincent.guittot@linaro.org>,
+        Dietmar Eggemann <dietmar.eggemann@arm.com>,
+        Morten Rasmussen <morten.rasmussen@arm.com>,
+        Qais Yousef <qais.yousef@arm.com>,
+        Quentin Perret <qperret@google.com>,
+        Pavan Kondeti <pkondeti@codeaurora.org>,
+        Rik van Riel <riel@surriel.com>
+Subject: [PATCH 6/8] sched/fair: Filter out locally-unsolvable misfit
+ imbalances
+Date: Thu, 28 Jan 2021 18:31:39 +0000
+X-Mailing-List: linux-kernel@vger.kernel.org
+
+Consider the following (hypothetical) asymmetric CPU capacity topology,
+with some amount of capacity pressure (RT | DL | IRQ | thermal):
+
+  DIE [          ]
+  MC  [    ][    ]
+       0  1  2  3
+
+  | CPU | capacity_orig | capacity |
+  |-----+---------------+----------|
+  |   0 |           870 |      860 |
+  |   1 |           870 |      600 |
+  |   2 |          1024 |      850 |
+  |   3 |          1024 |      860 |
+
+If CPU1 has a misfit task, then CPU0, CPU2 and CPU3 are valid candidates to
+grant the task an uplift in CPU capacity. Consider CPU0 and CPU3 as
+sufficiently busy, i.e. don't have enough spare capacity to accommodate
+CPU1's misfit task. This would then fall on CPU2 to pull the task.
+
+This currently won't happen, because CPU2 will fail
+
+  capacity_greater(capacity_of(CPU2), sg->sgc->max_capacity)
+
+in update_sd_pick_busiest(), where 'sg' is the [0, 1] group at DIE
+level. In this case, the max_capacity is that of CPU0's, which is at this
+point in time greater than that of CPU2's. This comparison doesn't make
+much sense, given that the only CPUs we should care about in this scenario
+are CPU1 (the CPU with the misfit task) and CPU2 (the load-balance
+destination CPU).
+
+Aggregate a misfit task's load into sgs->group_misfit_task_load only if
+env->dst_cpu would grant it a capacity uplift. Separately track whether a
+sched_group contains a misfit task to still classify it as
+group_misfit_task and not pick it as busiest group when pulling from a
+lower-capacity CPU (which is the current behaviour and prevents
+down-migration).
+
+Since find_busiest_queue() can now iterate over CPUs with a higher capacity
+than the local CPU's, add a capacity check there.
+
+Signed-off-by: Valentin Schneider <valentin.schneider@arm.com>
+---
+ kernel/sched/fair.c | 40 ++++++++++++++++++++++++++++++----------
+ 1 file changed, 30 insertions(+), 10 deletions(-)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index ef44474b8fbf..0ac2f876b86f 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -5765,6 +5765,12 @@ static unsigned long capacity_of(int cpu)
+ 	return cpu_rq(cpu)->cpu_capacity;
+ }
+ 
++/* Is CPU a's capacity noticeably greater than CPU b's? */
++static inline bool cpu_capacity_greater(int a, int b)
++{
++	return capacity_greater(capacity_of(a), capacity_of(b));
++}
++
+ static void record_wakee(struct task_struct *p)
+ {
+ 	/*
+@@ -8093,7 +8099,8 @@ struct sg_lb_stats {
+ 	unsigned int group_weight;
+ 	enum group_type group_type;
+ 	unsigned int group_asym_packing; /* Tasks should be moved to preferred CPU */
+-	unsigned long group_misfit_task_load; /* A CPU has a task too big for its capacity */
++	unsigned long group_misfit_task_load; /* Task load that can be uplifted */
++	int           group_has_misfit_task; /* A CPU has a task too big for its capacity */
+ #ifdef CONFIG_NUMA_BALANCING
+ 	unsigned int nr_numa_running;
+ 	unsigned int nr_preferred_running;
+@@ -8364,7 +8371,7 @@ group_type group_classify(unsigned int imbalance_pct,
+ 	if (sgs->group_asym_packing)
+ 		return group_asym_packing;
+ 
+-	if (sgs->group_misfit_task_load)
++	if (sgs->group_has_misfit_task)
+ 		return group_misfit_task;
+ 
+ 	if (!group_has_capacity(imbalance_pct, sgs))
+@@ -8450,11 +8457,21 @@ static inline void update_sg_lb_stats(struct lb_env *env,
+ 			continue;
+ 
+ 		/* Check for a misfit task on the cpu */
+-		if (sd_has_asym_cpucapacity(env->sd) &&
+-		    sgs->group_misfit_task_load < rq->misfit_task_load) {
+-			sgs->group_misfit_task_load = rq->misfit_task_load;
+-			*sg_status |= SG_OVERLOAD;
+-		}
++		if (!sd_has_asym_cpucapacity(env->sd) ||
++		    !rq->misfit_task_load)
++			continue;
++
++		*sg_status |= SG_OVERLOAD;
++		sgs->group_has_misfit_task = true;
++
++		/*
++		 * Don't attempt to maximize load for misfit tasks that can't be
++		 * granted a CPU capacity uplift.
++		 */
++		if (cpu_capacity_greater(env->dst_cpu, i))
++			sgs->group_misfit_task_load = max(
++				sgs->group_misfit_task_load,
++				rq->misfit_task_load);
+ 	}
+ 
+ 	/* Check if dst CPU is idle and preferred to this group */
+@@ -8504,7 +8521,7 @@ static bool update_sd_pick_busiest(struct lb_env *env,
+ 	/* Don't try to pull misfit tasks we can't help */
+ 	if (static_branch_unlikely(&sched_asym_cpucapacity) &&
+ 	    sgs->group_type == group_misfit_task &&
+-	    (!capacity_greater(capacity_of(env->dst_cpu), sg->sgc->max_capacity) ||
++	    (!sgs->group_misfit_task_load ||
+ 	     sds->local_stat.group_type != group_has_spare))
+ 		return false;
+ 
+@@ -9464,15 +9481,18 @@ static struct rq *find_busiest_queue(struct lb_env *env,
+ 		case migrate_misfit:
+ 			/*
+ 			 * For ASYM_CPUCAPACITY domains with misfit tasks we
+-			 * simply seek the "biggest" misfit task.
++			 * simply seek the "biggest" misfit task we can
++			 * accommodate.
+ 			 */
++			if (!cpu_capacity_greater(env->dst_cpu, i))
++				continue;
++
+ 			if (rq->misfit_task_load > busiest_load) {
+ 				busiest_load = rq->misfit_task_load;
+ 				busiest = rq;
+ 			}
+ 
+ 			break;
+-
+ 		}
+ 	}
+ 
+
+From patchwork Thu Jan 28 18:31:40 2021
+From: Valentin Schneider <valentin.schneider@arm.com>
+To: linux-kernel@vger.kernel.org
+Cc: Peter Zijlstra <peterz@infradead.org>,
+        Ingo Molnar <mingo@kernel.org>,
+        Vincent Guittot <vincent.guittot@linaro.org>,
+        Dietmar Eggemann <dietmar.eggemann@arm.com>,
+        Morten Rasmussen <morten.rasmussen@arm.com>,
+        Qais Yousef <qais.yousef@arm.com>,
+        Quentin Perret <qperret@google.com>,
+        Pavan Kondeti <pkondeti@codeaurora.org>,
+        Rik van Riel <riel@surriel.com>
+Subject: [PATCH 7/8] sched/fair: Attempt misfit active balance when
+ migration_type != migrate_misfit
+Date: Thu, 28 Jan 2021 18:31:40 +0000
+X-Mailing-List: linux-kernel@vger.kernel.org
+
+Consider a 4-CPU big.LITTLE system with CPUs 0-1 as LITTLEs and CPUs 2-3 as
+bigs. The resulting sched_domain hierarchy is:
+
+  DIE [          ]
+  MC  [    ][    ]
+       0  1  2  3
+
+When running a multithreaded CPU-bound workload (i.e. 1 hog per CPU), the
+expected behaviour is to have the about-to-idle big CPUs pull a hog from
+the LITTLEs, since bigs will complete their work sooner than LITTLEs.
+
+Further Consider a scenario where:
+- CPU0 is idle (e.g. its hog got migrated to one of the big CPUs)
+- CPU1 is currently executing a per-CPU kworker, preempting the CPU hog
+- CPU2 and CPU3 are executing CPU-hogs
+
+CPU0 goes through load_balance() at MC level, and tries to pick stuff from
+CPU1, but:
+- the hog can't be pulled, because it's task_hot()
+- the kworker can't be pulled, because it's pinned to CPU1, which sets
+  LBF_SOME_PINNED
+
+This load balance attempts ends with no load pulled, LBF_SOME_PINNED set,
+and as a consequence we set the imbalance flag of DIE's [0, 1]
+sched_group_capacity.
+
+Shortly after, CPU2 completes its work and is about to go idle. It goes
+through the newidle_balance(), and we would really like it to active
+balance the hog running on CPU1 (which is a misfit task). However,
+sgc->imbalance is set for the LITTLE group at DIE level, so the group gets
+classified as group_imbalanced rather than group_misfit_task.
+
+Unlike group_misfit_task (via migrate_misfit), the active balance logic
+doesn't have any specific case for group_imbalanced, so CPU2 ends up going
+idle. We'll have to wait for a load balance on CPU0 or CPU1 to happen and
+clear the imbalance flag, and then for another DIE-level load-balance on
+CPU2 to happen to pull the task off of CPU1. That's several precious
+milliseconds wasted down the drain.
+
+Giving group_misfit_task a higher group_classify() priority than
+group_imbalance doesn't seem like the right thing to do. Instead, make
+need_active_balance() return true for any migration_type when the
+destination CPU is idle and the source CPU has a misfit task.
+
+While at it, add an sd_has_asym_cpucapacity() guard in
+need_active_balance().
+
+Signed-off-by: Valentin Schneider <valentin.schneider@arm.com>
+---
+ kernel/sched/fair.c | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 0ac2f876b86f..cba9f97d9beb 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -9557,9 +9557,22 @@ static int need_active_balance(struct lb_env *env)
+ 			return 1;
+ 	}
+ 
++	if (!sd_has_asym_cpucapacity(sd))
++		return 0;
++
+ 	if (env->migration_type == migrate_misfit)
+ 		return 1;
+ 
++	/*
++	 * If we failed to pull anything and the src_rq has a misfit task, but
++	 * the busiest group_type was higher than group_misfit_task, try to
++	 * go for a misfit active balance anyway.
++	 */
++	if ((env->idle != CPU_NOT_IDLE) &&
++	    env->src_rq->misfit_task_load &&
++	    cpu_capacity_greater(env->dst_cpu, env->src_cpu))
++		return 1;
++
+ 	return 0;
+ }
+ 
+
+From patchwork Thu Jan 28 18:31:41 2021
+From: Valentin Schneider <valentin.schneider@arm.com>
+To: linux-kernel@vger.kernel.org
+Cc: Peter Zijlstra <peterz@infradead.org>,
+        Ingo Molnar <mingo@kernel.org>,
+        Vincent Guittot <vincent.guittot@linaro.org>,
+        Dietmar Eggemann <dietmar.eggemann@arm.com>,
+        Morten Rasmussen <morten.rasmussen@arm.com>,
+        Qais Yousef <qais.yousef@arm.com>,
+        Quentin Perret <qperret@google.com>,
+        Pavan Kondeti <pkondeti@codeaurora.org>,
+        Rik van Riel <riel@surriel.com>
+Subject: [PATCH 8/8] sched/fair: Relax task_hot() for misfit tasks
+Date: Thu, 28 Jan 2021 18:31:41 +0000
+X-Mailing-List: linux-kernel@vger.kernel.org
+
+Misfit tasks can and will be preempted by the stopper to migrate them over
+to a higher-capacity CPU. However, when runnable but not current misfit
+tasks are scanned by the load balancer (i.e. detach_tasks()), the
+task_hot() ratelimiting logic may prevent us from enqueuing said task onto
+a higher-capacity CPU.
+
+Align detach_tasks() with the active-balance logic and let it pick a
+cache-hot misfit task when the destination CPU can provide a capacity
+uplift.
+
+Signed-off-by: Valentin Schneider <valentin.schneider@arm.com>
+---
+ kernel/sched/fair.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index cba9f97d9beb..c2351b87824f 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -7484,6 +7484,17 @@ static int task_hot(struct task_struct *p, struct lb_env *env)
+ 	if (env->sd->flags & SD_SHARE_CPUCAPACITY)
+ 		return 0;
+ 
++	/*
++	 * On a (sane) asymmetric CPU capacity system, the increase in compute
++	 * capacity should offset any potential performance hit caused by a
++	 * migration.
++	 */
++	if (sd_has_asym_cpucapacity(env->sd) &&
++	    env->idle != CPU_NOT_IDLE &&
++	    !task_fits_capacity(p, capacity_of(env->src_cpu)) &&
++	    cpu_capacity_greater(env->dst_cpu, env->src_cpu))
++		return 0;
++
+ 	/*
+ 	 * Buddy candidates are cache hot:
+ 	 */

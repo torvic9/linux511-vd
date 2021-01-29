@@ -1,0 +1,3640 @@
+From 7d6a905f3dd62c4502cdd772c71319de4058ec89 Mon Sep 17 00:00:00 2001
+From: Viresh Kumar <viresh.kumar@linaro.org>
+Date: Tue, 8 Dec 2020 09:46:55 +0530
+Subject: [PATCH] sched/core: Move schedutil_cpu_util() to core.c
+
+There is nothing schedutil specific in schedutil_cpu_util(), move it to
+core.c and define it only for CONFIG_SMP.
+
+Signed-off-by: Viresh Kumar <viresh.kumar@linaro.org>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Acked-by: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
+Link: https://lkml.kernel.org/r/c921a362c78e1324f8ebc5aaa12f53e309c5a8a2.1607400596.git.viresh.kumar@linaro.org
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/core.c              | 108 +++++++++++++++++++++++++++++++
+ kernel/sched/cpufreq_schedutil.c | 106 ------------------------------
+ kernel/sched/sched.h             |  12 +---
+ 3 files changed, 109 insertions(+), 117 deletions(-)
+
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 15d256211..d89d682d5 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -5662,6 +5662,114 @@ struct task_struct *idle_task(int cpu)
+ 	return cpu_rq(cpu)->idle;
+ }
+ 
++#ifdef CONFIG_SMP
++/*
++ * This function computes an effective utilization for the given CPU, to be
++ * used for frequency selection given the linear relation: f = u * f_max.
++ *
++ * The scheduler tracks the following metrics:
++ *
++ *   cpu_util_{cfs,rt,dl,irq}()
++ *   cpu_bw_dl()
++ *
++ * Where the cfs,rt and dl util numbers are tracked with the same metric and
++ * synchronized windows and are thus directly comparable.
++ *
++ * The cfs,rt,dl utilization are the running times measured with rq->clock_task
++ * which excludes things like IRQ and steal-time. These latter are then accrued
++ * in the irq utilization.
++ *
++ * The DL bandwidth number otoh is not a measured metric but a value computed
++ * based on the task model parameters and gives the minimal utilization
++ * required to meet deadlines.
++ */
++unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
++				 unsigned long max, enum schedutil_type type,
++				 struct task_struct *p)
++{
++	unsigned long dl_util, util, irq;
++	struct rq *rq = cpu_rq(cpu);
++
++	if (!uclamp_is_used() &&
++	    type == FREQUENCY_UTIL && rt_rq_is_runnable(&rq->rt)) {
++		return max;
++	}
++
++	/*
++	 * Early check to see if IRQ/steal time saturates the CPU, can be
++	 * because of inaccuracies in how we track these -- see
++	 * update_irq_load_avg().
++	 */
++	irq = cpu_util_irq(rq);
++	if (unlikely(irq >= max))
++		return max;
++
++	/*
++	 * Because the time spend on RT/DL tasks is visible as 'lost' time to
++	 * CFS tasks and we use the same metric to track the effective
++	 * utilization (PELT windows are synchronized) we can directly add them
++	 * to obtain the CPU's actual utilization.
++	 *
++	 * CFS and RT utilization can be boosted or capped, depending on
++	 * utilization clamp constraints requested by currently RUNNABLE
++	 * tasks.
++	 * When there are no CFS RUNNABLE tasks, clamps are released and
++	 * frequency will be gracefully reduced with the utilization decay.
++	 */
++	util = util_cfs + cpu_util_rt(rq);
++	if (type == FREQUENCY_UTIL)
++		util = uclamp_rq_util_with(rq, util, p);
++
++	dl_util = cpu_util_dl(rq);
++
++	/*
++	 * For frequency selection we do not make cpu_util_dl() a permanent part
++	 * of this sum because we want to use cpu_bw_dl() later on, but we need
++	 * to check if the CFS+RT+DL sum is saturated (ie. no idle time) such
++	 * that we select f_max when there is no idle time.
++	 *
++	 * NOTE: numerical errors or stop class might cause us to not quite hit
++	 * saturation when we should -- something for later.
++	 */
++	if (util + dl_util >= max)
++		return max;
++
++	/*
++	 * OTOH, for energy computation we need the estimated running time, so
++	 * include util_dl and ignore dl_bw.
++	 */
++	if (type == ENERGY_UTIL)
++		util += dl_util;
++
++	/*
++	 * There is still idle time; further improve the number by using the
++	 * irq metric. Because IRQ/steal time is hidden from the task clock we
++	 * need to scale the task numbers:
++	 *
++	 *              max - irq
++	 *   U' = irq + --------- * U
++	 *                 max
++	 */
++	util = scale_irq_capacity(util, irq, max);
++	util += irq;
++
++	/*
++	 * Bandwidth required by DEADLINE must always be granted while, for
++	 * FAIR and RT, we use blocked utilization of IDLE CPUs as a mechanism
++	 * to gracefully reduce the frequency when no tasks show up for longer
++	 * periods of time.
++	 *
++	 * Ideally we would like to set bw_dl as min/guaranteed freq and util +
++	 * bw_dl as requested freq. However, cpufreq is not yet ready for such
++	 * an interface. So, we only do the latter for now.
++	 */
++	if (type == FREQUENCY_UTIL)
++		util += cpu_bw_dl(rq);
++
++	return min(max, util);
++}
++#endif /* CONFIG_SMP */
++
+ /**
+  * find_process_by_pid - find a process with a matching PID value.
+  * @pid: the pid in question.
+diff --git a/kernel/sched/cpufreq_schedutil.c b/kernel/sched/cpufreq_schedutil.c
+index 6931f0cde..1dfa69246 100644
+--- a/kernel/sched/cpufreq_schedutil.c
++++ b/kernel/sched/cpufreq_schedutil.c
+@@ -171,112 +171,6 @@ static unsigned int get_next_freq(struct sugov_policy *sg_policy,
+ 	return cpufreq_driver_resolve_freq(policy, freq);
+ }
+ 
+-/*
+- * This function computes an effective utilization for the given CPU, to be
+- * used for frequency selection given the linear relation: f = u * f_max.
+- *
+- * The scheduler tracks the following metrics:
+- *
+- *   cpu_util_{cfs,rt,dl,irq}()
+- *   cpu_bw_dl()
+- *
+- * Where the cfs,rt and dl util numbers are tracked with the same metric and
+- * synchronized windows and are thus directly comparable.
+- *
+- * The cfs,rt,dl utilization are the running times measured with rq->clock_task
+- * which excludes things like IRQ and steal-time. These latter are then accrued
+- * in the irq utilization.
+- *
+- * The DL bandwidth number otoh is not a measured metric but a value computed
+- * based on the task model parameters and gives the minimal utilization
+- * required to meet deadlines.
+- */
+-unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
+-				 unsigned long max, enum schedutil_type type,
+-				 struct task_struct *p)
+-{
+-	unsigned long dl_util, util, irq;
+-	struct rq *rq = cpu_rq(cpu);
+-
+-	if (!uclamp_is_used() &&
+-	    type == FREQUENCY_UTIL && rt_rq_is_runnable(&rq->rt)) {
+-		return max;
+-	}
+-
+-	/*
+-	 * Early check to see if IRQ/steal time saturates the CPU, can be
+-	 * because of inaccuracies in how we track these -- see
+-	 * update_irq_load_avg().
+-	 */
+-	irq = cpu_util_irq(rq);
+-	if (unlikely(irq >= max))
+-		return max;
+-
+-	/*
+-	 * Because the time spend on RT/DL tasks is visible as 'lost' time to
+-	 * CFS tasks and we use the same metric to track the effective
+-	 * utilization (PELT windows are synchronized) we can directly add them
+-	 * to obtain the CPU's actual utilization.
+-	 *
+-	 * CFS and RT utilization can be boosted or capped, depending on
+-	 * utilization clamp constraints requested by currently RUNNABLE
+-	 * tasks.
+-	 * When there are no CFS RUNNABLE tasks, clamps are released and
+-	 * frequency will be gracefully reduced with the utilization decay.
+-	 */
+-	util = util_cfs + cpu_util_rt(rq);
+-	if (type == FREQUENCY_UTIL)
+-		util = uclamp_rq_util_with(rq, util, p);
+-
+-	dl_util = cpu_util_dl(rq);
+-
+-	/*
+-	 * For frequency selection we do not make cpu_util_dl() a permanent part
+-	 * of this sum because we want to use cpu_bw_dl() later on, but we need
+-	 * to check if the CFS+RT+DL sum is saturated (ie. no idle time) such
+-	 * that we select f_max when there is no idle time.
+-	 *
+-	 * NOTE: numerical errors or stop class might cause us to not quite hit
+-	 * saturation when we should -- something for later.
+-	 */
+-	if (util + dl_util >= max)
+-		return max;
+-
+-	/*
+-	 * OTOH, for energy computation we need the estimated running time, so
+-	 * include util_dl and ignore dl_bw.
+-	 */
+-	if (type == ENERGY_UTIL)
+-		util += dl_util;
+-
+-	/*
+-	 * There is still idle time; further improve the number by using the
+-	 * irq metric. Because IRQ/steal time is hidden from the task clock we
+-	 * need to scale the task numbers:
+-	 *
+-	 *              max - irq
+-	 *   U' = irq + --------- * U
+-	 *                 max
+-	 */
+-	util = scale_irq_capacity(util, irq, max);
+-	util += irq;
+-
+-	/*
+-	 * Bandwidth required by DEADLINE must always be granted while, for
+-	 * FAIR and RT, we use blocked utilization of IDLE CPUs as a mechanism
+-	 * to gracefully reduce the frequency when no tasks show up for longer
+-	 * periods of time.
+-	 *
+-	 * Ideally we would like to set bw_dl as min/guaranteed freq and util +
+-	 * bw_dl as requested freq. However, cpufreq is not yet ready for such
+-	 * an interface. So, we only do the latter for now.
+-	 */
+-	if (type == FREQUENCY_UTIL)
+-		util += cpu_bw_dl(rq);
+-
+-	return min(max, util);
+-}
+-
+ static void sugov_get_util(struct sugov_cpu *sg_cpu)
+ {
+ 	struct rq *rq = cpu_rq(sg_cpu->cpu);
+diff --git a/kernel/sched/sched.h b/kernel/sched/sched.h
+index 12ada79d4..242d4c5a5 100644
+--- a/kernel/sched/sched.h
++++ b/kernel/sched/sched.h
+@@ -2557,7 +2557,6 @@ static inline unsigned long capacity_orig_of(int cpu)
+ {
+ 	return cpu_rq(cpu)->cpu_capacity_orig;
+ }
+-#endif
+ 
+ /**
+  * enum schedutil_type - CPU utilization type
+@@ -2574,8 +2573,6 @@ enum schedutil_type {
+ 	ENERGY_UTIL,
+ };
+ 
+-#ifdef CONFIG_CPU_FREQ_GOV_SCHEDUTIL
+-
+ unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
+ 				 unsigned long max, enum schedutil_type type,
+ 				 struct task_struct *p);
+@@ -2606,14 +2603,7 @@ static inline unsigned long cpu_util_rt(struct rq *rq)
+ {
+ 	return READ_ONCE(rq->avg_rt.util_avg);
+ }
+-#else /* CONFIG_CPU_FREQ_GOV_SCHEDUTIL */
+-static inline unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
+-				 unsigned long max, enum schedutil_type type,
+-				 struct task_struct *p)
+-{
+-	return 0;
+-}
+-#endif /* CONFIG_CPU_FREQ_GOV_SCHEDUTIL */
++#endif
+ 
+ #ifdef CONFIG_HAVE_SCHED_AVG_IRQ
+ static inline unsigned long cpu_util_irq(struct rq *rq)
+-- 
+2.30.0
+
+From a5418be9dffe70ccbb0b4bd5ea3881c81927e965 Mon Sep 17 00:00:00 2001
+From: Viresh Kumar <viresh.kumar@linaro.org>
+Date: Tue, 8 Dec 2020 09:46:56 +0530
+Subject: [PATCH] sched/core: Rename schedutil_cpu_util() and allow rest of the
+ kernel to use it
+
+There is nothing schedutil specific in schedutil_cpu_util(), rename it
+to effective_cpu_util(). Also create and expose another wrapper
+sched_cpu_util() which can be used by other parts of the kernel, like
+thermal core (that will be done in a later commit).
+
+Signed-off-by: Viresh Kumar <viresh.kumar@linaro.org>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Acked-by: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
+Link: https://lkml.kernel.org/r/db011961fb3bb8bef1c0eda5cd64564637d3ef31.1607400596.git.viresh.kumar@linaro.org
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ include/linux/sched.h            |  5 +++++
+ kernel/sched/core.c              | 10 ++++++++--
+ kernel/sched/cpufreq_schedutil.c |  2 +-
+ kernel/sched/fair.c              |  6 +++---
+ kernel/sched/sched.h             | 10 +++++-----
+ 5 files changed, 22 insertions(+), 11 deletions(-)
+
+diff --git a/include/linux/sched.h b/include/linux/sched.h
+index 6e3a5eeec..31169e704 100644
+--- a/include/linux/sched.h
++++ b/include/linux/sched.h
+@@ -1968,6 +1968,11 @@ extern long sched_getaffinity(pid_t pid, struct cpumask *mask);
+ #define TASK_SIZE_OF(tsk)	TASK_SIZE
+ #endif
+ 
++#ifdef CONFIG_SMP
++/* Returns effective CPU energy utilization, as seen by the scheduler */
++unsigned long sched_cpu_util(int cpu, unsigned long max);
++#endif /* CONFIG_SMP */
++
+ #ifdef CONFIG_RSEQ
+ 
+ /*
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index d89d682d5..4fe4cbf0b 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -5683,8 +5683,8 @@ struct task_struct *idle_task(int cpu)
+  * based on the task model parameters and gives the minimal utilization
+  * required to meet deadlines.
+  */
+-unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
+-				 unsigned long max, enum schedutil_type type,
++unsigned long effective_cpu_util(int cpu, unsigned long util_cfs,
++				 unsigned long max, enum cpu_util_type type,
+ 				 struct task_struct *p)
+ {
+ 	unsigned long dl_util, util, irq;
+@@ -5768,6 +5768,12 @@ unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
+ 
+ 	return min(max, util);
+ }
++
++unsigned long sched_cpu_util(int cpu, unsigned long max)
++{
++	return effective_cpu_util(cpu, cpu_util_cfs(cpu_rq(cpu)), max,
++				  ENERGY_UTIL, NULL);
++}
+ #endif /* CONFIG_SMP */
+ 
+ /**
+diff --git a/kernel/sched/cpufreq_schedutil.c b/kernel/sched/cpufreq_schedutil.c
+index 1dfa69246..41e498b00 100644
+--- a/kernel/sched/cpufreq_schedutil.c
++++ b/kernel/sched/cpufreq_schedutil.c
+@@ -178,7 +178,7 @@ static void sugov_get_util(struct sugov_cpu *sg_cpu)
+ 
+ 	sg_cpu->max = max;
+ 	sg_cpu->bw_dl = cpu_bw_dl(rq);
+-	sg_cpu->util = schedutil_cpu_util(sg_cpu->cpu, cpu_util_cfs(rq), max,
++	sg_cpu->util = effective_cpu_util(sg_cpu->cpu, cpu_util_cfs(rq), max,
+ 					  FREQUENCY_UTIL, NULL);
+ }
+ 
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 04a3ce20d..39c5bda90 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -6543,7 +6543,7 @@ compute_energy(struct task_struct *p, int dst_cpu, struct perf_domain *pd)
+ 		 * is already enough to scale the EM reported power
+ 		 * consumption at the (eventually clamped) cpu_capacity.
+ 		 */
+-		sum_util += schedutil_cpu_util(cpu, util_cfs, cpu_cap,
++		sum_util += effective_cpu_util(cpu, util_cfs, cpu_cap,
+ 					       ENERGY_UTIL, NULL);
+ 
+ 		/*
+@@ -6553,7 +6553,7 @@ compute_energy(struct task_struct *p, int dst_cpu, struct perf_domain *pd)
+ 		 * NOTE: in case RT tasks are running, by default the
+ 		 * FREQUENCY_UTIL's utilization can be max OPP.
+ 		 */
+-		cpu_util = schedutil_cpu_util(cpu, util_cfs, cpu_cap,
++		cpu_util = effective_cpu_util(cpu, util_cfs, cpu_cap,
+ 					      FREQUENCY_UTIL, tsk);
+ 		max_util = max(max_util, cpu_util);
+ 	}
+@@ -6651,7 +6651,7 @@ static int find_energy_efficient_cpu(struct task_struct *p, int prev_cpu)
+ 			 * IOW, placing the task there would make the CPU
+ 			 * overutilized. Take uclamp into account to see how
+ 			 * much capacity we can get out of the CPU; this is
+-			 * aligned with schedutil_cpu_util().
++			 * aligned with sched_cpu_util().
+ 			 */
+ 			util = uclamp_rq_util_with(cpu_rq(cpu), util, p);
+ 			if (!fits_capacity(util, cpu_cap))
+diff --git a/kernel/sched/sched.h b/kernel/sched/sched.h
+index 242d4c5a5..045b01064 100644
+--- a/kernel/sched/sched.h
++++ b/kernel/sched/sched.h
+@@ -2559,22 +2559,22 @@ static inline unsigned long capacity_orig_of(int cpu)
+ }
+ 
+ /**
+- * enum schedutil_type - CPU utilization type
++ * enum cpu_util_type - CPU utilization type
+  * @FREQUENCY_UTIL:	Utilization used to select frequency
+  * @ENERGY_UTIL:	Utilization used during energy calculation
+  *
+  * The utilization signals of all scheduling classes (CFS/RT/DL) and IRQ time
+  * need to be aggregated differently depending on the usage made of them. This
+- * enum is used within schedutil_freq_util() to differentiate the types of
++ * enum is used within effective_cpu_util() to differentiate the types of
+  * utilization expected by the callers, and adjust the aggregation accordingly.
+  */
+-enum schedutil_type {
++enum cpu_util_type {
+ 	FREQUENCY_UTIL,
+ 	ENERGY_UTIL,
+ };
+ 
+-unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
+-				 unsigned long max, enum schedutil_type type,
++unsigned long effective_cpu_util(int cpu, unsigned long util_cfs,
++				 unsigned long max, enum cpu_util_type type,
+ 				 struct task_struct *p);
+ 
+ static inline unsigned long cpu_bw_dl(struct rq *rq)
+-- 
+2.30.0
+
+From d1515851ca075ed98fe78ac6abf24ba2dd25a63b Mon Sep 17 00:00:00 2001
+From: Viresh Kumar <viresh.kumar@linaro.org>
+Date: Tue, 8 Dec 2020 09:46:57 +0530
+Subject: [PATCH] thermal: cpufreq_cooling: Reuse sched_cpu_util() for SMP
+ platforms
+
+Several parts of the kernel are already using the effective CPU
+utilization (as seen by the scheduler) to get the current load on the
+CPU, do the same here instead of depending on the idle time of the CPU,
+which isn't that accurate comparatively.
+
+This is also the right thing to do as it makes the cpufreq governor
+(schedutil) align better with the cpufreq_cooling driver, as the power
+requested by cpufreq_cooling governor will exactly match the next
+frequency requested by the schedutil governor since they are both using
+the same metric to calculate load.
+
+This was tested on ARM Hikey6220 platform with hackbench, sysbench and
+schbench. None of them showed any regression or significant
+improvements. Schbench is the most important ones out of these as it
+creates the scenario where the utilization numbers provide a better
+estimate of the future.
+
+Scenario 1: The CPUs were mostly idle in the previous polling window of
+the IPA governor as the tasks were sleeping and here are the details
+from traces (load is in %):
+
+ Old: thermal_power_cpu_get_power: cpus=00000000,000000ff freq=1200000 total_load=203 load={{0x35,0x1,0x0,0x31,0x0,0x0,0x64,0x0}} dynamic_power=1339
+ New: thermal_power_cpu_get_power: cpus=00000000,000000ff freq=1200000 total_load=600 load={{0x60,0x46,0x45,0x45,0x48,0x3b,0x61,0x44}} dynamic_power=3960
+
+Here, the "Old" line gives the load and requested_power (dynamic_power
+here) numbers calculated using the idle time based implementation, while
+"New" is based on the CPU utilization from scheduler.
+
+As can be clearly seen, the load and requested_power numbers are simply
+incorrect in the idle time based approach and the numbers collected from
+CPU's utilization are much closer to the reality.
+
+Scenario 2: The CPUs were busy in the previous polling window of the IPA
+governor:
+
+ Old: thermal_power_cpu_get_power: cpus=00000000,000000ff freq=1200000 total_load=800 load={{0x64,0x64,0x64,0x64,0x64,0x64,0x64,0x64}} dynamic_power=5280
+ New: thermal_power_cpu_get_power: cpus=00000000,000000ff freq=1200000 total_load=708 load={{0x4d,0x5c,0x5c,0x5b,0x5c,0x5c,0x51,0x5b}} dynamic_power=4672
+
+As can be seen, the idle time based load is 100% for all the CPUs as it
+took only the last window into account, but in reality the CPUs aren't
+that loaded as shown by the utilization numbers.
+
+Signed-off-by: Viresh Kumar <viresh.kumar@linaro.org>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Lukasz Luba <lukasz.luba@arm.com>
+Link: https://lkml.kernel.org/r/9c255c83d78d58451abc06848001faef94c87a12.1607400596.git.viresh.kumar@linaro.org
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ drivers/thermal/cpufreq_cooling.c | 69 ++++++++++++++++++++++++-------
+ 1 file changed, 55 insertions(+), 14 deletions(-)
+
+diff --git a/drivers/thermal/cpufreq_cooling.c b/drivers/thermal/cpufreq_cooling.c
+index 612f063c1..f5af2571f 100644
+--- a/drivers/thermal/cpufreq_cooling.c
++++ b/drivers/thermal/cpufreq_cooling.c
+@@ -76,7 +76,9 @@ struct cpufreq_cooling_device {
+ 	struct em_perf_domain *em;
+ 	struct cpufreq_policy *policy;
+ 	struct list_head node;
++#ifndef CONFIG_SMP
+ 	struct time_in_idle *idle_time;
++#endif
+ 	struct freq_qos_request qos_req;
+ };
+ 
+@@ -132,14 +134,25 @@ static u32 cpu_power_to_freq(struct cpufreq_cooling_device *cpufreq_cdev,
+ }
+ 
+ /**
+- * get_load() - get load for a cpu since last updated
+- * @cpufreq_cdev:	&struct cpufreq_cooling_device for this cpu
+- * @cpu:	cpu number
+- * @cpu_idx:	index of the cpu in time_in_idle*
++ * get_load() - get load for a cpu
++ * @cpufreq_cdev: struct cpufreq_cooling_device for the cpu
++ * @cpu: cpu number
++ * @cpu_idx: index of the cpu in time_in_idle array
+  *
+  * Return: The average load of cpu @cpu in percentage since this
+  * function was last called.
+  */
++#ifdef CONFIG_SMP
++static u32 get_load(struct cpufreq_cooling_device *cpufreq_cdev, int cpu,
++		    int cpu_idx)
++{
++	unsigned long max = arch_scale_cpu_capacity(cpu);
++	unsigned long util;
++
++	util = sched_cpu_util(cpu, max);
++	return (util * 100) / max;
++}
++#else /* !CONFIG_SMP */
+ static u32 get_load(struct cpufreq_cooling_device *cpufreq_cdev, int cpu,
+ 		    int cpu_idx)
+ {
+@@ -161,6 +174,7 @@ static u32 get_load(struct cpufreq_cooling_device *cpufreq_cdev, int cpu,
+ 
+ 	return load;
+ }
++#endif /* CONFIG_SMP */
+ 
+ /**
+  * get_dynamic_power() - calculate the dynamic power
+@@ -346,6 +360,36 @@ static inline bool em_is_sane(struct cpufreq_cooling_device *cpufreq_cdev,
+ }
+ #endif /* CONFIG_THERMAL_GOV_POWER_ALLOCATOR */
+ 
++#ifdef CONFIG_SMP
++static inline int allocate_idle_time(struct cpufreq_cooling_device *cpufreq_cdev)
++{
++	return 0;
++}
++
++static inline void free_idle_time(struct cpufreq_cooling_device *cpufreq_cdev)
++{
++}
++#else
++static int allocate_idle_time(struct cpufreq_cooling_device *cpufreq_cdev)
++{
++	unsigned int num_cpus = cpumask_weight(cpufreq_cdev->policy->related_cpus);
++
++	cpufreq_cdev->idle_time = kcalloc(num_cpus,
++					  sizeof(*cpufreq_cdev->idle_time),
++					  GFP_KERNEL);
++	if (!cpufreq_cdev->idle_time)
++		return -ENOMEM;
++
++	return 0;
++}
++
++static void free_idle_time(struct cpufreq_cooling_device *cpufreq_cdev)
++{
++	kfree(cpufreq_cdev->idle_time);
++	cpufreq_cdev->idle_time = NULL;
++}
++#endif /* CONFIG_SMP */
++
+ static unsigned int get_state_freq(struct cpufreq_cooling_device *cpufreq_cdev,
+ 				   unsigned long state)
+ {
+@@ -485,7 +529,7 @@ __cpufreq_cooling_register(struct device_node *np,
+ 	struct thermal_cooling_device *cdev;
+ 	struct cpufreq_cooling_device *cpufreq_cdev;
+ 	char dev_name[THERMAL_NAME_LENGTH];
+-	unsigned int i, num_cpus;
++	unsigned int i;
+ 	struct device *dev;
+ 	int ret;
+ 	struct thermal_cooling_device_ops *cooling_ops;
+@@ -496,7 +540,6 @@ __cpufreq_cooling_register(struct device_node *np,
+ 		return ERR_PTR(-ENODEV);
+ 	}
+ 
+-
+ 	if (IS_ERR_OR_NULL(policy)) {
+ 		pr_err("%s: cpufreq policy isn't valid: %p\n", __func__, policy);
+ 		return ERR_PTR(-EINVAL);
+@@ -514,12 +557,10 @@ __cpufreq_cooling_register(struct device_node *np,
+ 		return ERR_PTR(-ENOMEM);
+ 
+ 	cpufreq_cdev->policy = policy;
+-	num_cpus = cpumask_weight(policy->related_cpus);
+-	cpufreq_cdev->idle_time = kcalloc(num_cpus,
+-					 sizeof(*cpufreq_cdev->idle_time),
+-					 GFP_KERNEL);
+-	if (!cpufreq_cdev->idle_time) {
+-		cdev = ERR_PTR(-ENOMEM);
++
++	ret = allocate_idle_time(cpufreq_cdev);
++	if (ret) {
++		cdev = ERR_PTR(ret);
+ 		goto free_cdev;
+ 	}
+ 
+@@ -579,7 +620,7 @@ __cpufreq_cooling_register(struct device_node *np,
+ remove_ida:
+ 	ida_simple_remove(&cpufreq_ida, cpufreq_cdev->id);
+ free_idle_time:
+-	kfree(cpufreq_cdev->idle_time);
++	free_idle_time(cpufreq_cdev);
+ free_cdev:
+ 	kfree(cpufreq_cdev);
+ 	return cdev;
+@@ -672,7 +713,7 @@ void cpufreq_cooling_unregister(struct thermal_cooling_device *cdev)
+ 	thermal_cooling_device_unregister(cdev);
+ 	freq_qos_remove_request(&cpufreq_cdev->qos_req);
+ 	ida_simple_remove(&cpufreq_ida, cpufreq_cdev->id);
+-	kfree(cpufreq_cdev->idle_time);
++	free_idle_time(cpufreq_cdev);
+ 	kfree(cpufreq_cdev);
+ }
+ EXPORT_SYMBOL_GPL(cpufreq_cooling_unregister);
+-- 
+2.30.0
+
+From e0b257c3b71bd98a4866c3daecf000998aaa4927 Mon Sep 17 00:00:00 2001
+From: Anna-Maria Behnsen <anna-maria@linutronix.de>
+Date: Tue, 15 Dec 2020 11:44:00 +0100
+Subject: [PATCH] sched: Prevent raising SCHED_SOFTIRQ when CPU is !active
+
+SCHED_SOFTIRQ is raised to trigger periodic load balancing. When CPU is not
+active, CPU should not participate in load balancing.
+
+The scheduler uses nohz.idle_cpus_mask to keep track of the CPUs which can
+do idle load balancing. When bringing a CPU up the CPU is added to the mask
+when it reaches the active state, but on teardown the CPU stays in the mask
+until it goes offline and invokes sched_cpu_dying().
+
+When SCHED_SOFTIRQ is raised on a !active CPU, there might be a pending
+softirq when stopping the tick which triggers a warning in NOHZ code. The
+SCHED_SOFTIRQ can also be raised by the scheduler tick which has the same
+issue.
+
+Therefore remove the CPU from nohz.idle_cpus_mask when it is marked
+inactive and also prevent the scheduler_tick() from raising SCHED_SOFTIRQ
+after this point.
+
+Signed-off-by: Anna-Maria Behnsen <anna-maria@linutronix.de>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Steven Rostedt (VMware) <rostedt@goodmis.org>
+Link: https://lkml.kernel.org/r/20201215104400.9435-1-anna-maria@linutronix.de
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/core.c | 7 ++++++-
+ kernel/sched/fair.c | 7 +++++--
+ 2 files changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 4fe4cbf0b..06b449942 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -7596,6 +7596,12 @@ int sched_cpu_deactivate(unsigned int cpu)
+ 	struct rq_flags rf;
+ 	int ret;
+ 
++	/*
++	 * Remove CPU from nohz.idle_cpus_mask to prevent participating in
++	 * load balancing when not active
++	 */
++	nohz_balance_exit_idle(rq);
++
+ 	set_cpu_active(cpu, false);
+ 	/*
+ 	 * We've cleared cpu_active_mask, wait for all preempt-disabled and RCU
+@@ -7702,7 +7708,6 @@ int sched_cpu_dying(unsigned int cpu)
+ 
+ 	calc_load_migrate(rq);
+ 	update_max_interval();
+-	nohz_balance_exit_idle(rq);
+ 	hrtick_clear(rq);
+ 	return 0;
+ }
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 39c5bda90..389cb5865 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -10700,8 +10700,11 @@ static __latent_entropy void run_rebalance_domains(struct softirq_action *h)
+  */
+ void trigger_load_balance(struct rq *rq)
+ {
+-	/* Don't need to rebalance while attached to NULL domain */
+-	if (unlikely(on_null_domain(rq)))
++	/*
++	 * Don't need to rebalance while attached to NULL domain or
++	 * runqueue CPU is not active
++	 */
++	if (unlikely(on_null_domain(rq) || !cpu_active(cpu_of(rq))))
+ 		return;
+ 
+ 	if (time_after_eq(jiffies, rq->next_balance))
+-- 
+2.30.0
+
+From 0301925dd004539adbcf11f68a3a785472376e27 Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Fri, 18 Dec 2020 11:28:12 +0100
+Subject: [PATCH] sched: Add schedutil overview
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Morten Rasmussen <morten.rasmussen@arm.com>
+Link: https://lkml.kernel.org/r/20201218103258.GA3040@hirez.programming.kicks-ass.net
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ Documentation/scheduler/schedutil.txt | 169 ++++++++++++++++++++++++++
+ 1 file changed, 169 insertions(+)
+ create mode 100644 Documentation/scheduler/schedutil.txt
+
+diff --git a/Documentation/scheduler/schedutil.txt b/Documentation/scheduler/schedutil.txt
+new file mode 100644
+index 000000000..78f6b91e2
+--- /dev/null
++++ b/Documentation/scheduler/schedutil.txt
+@@ -0,0 +1,169 @@
++
++
++NOTE; all this assumes a linear relation between frequency and work capacity,
++we know this is flawed, but it is the best workable approximation.
++
++
++PELT (Per Entity Load Tracking)
++-------------------------------
++
++With PELT we track some metrics across the various scheduler entities, from
++individual tasks to task-group slices to CPU runqueues. As the basis for this
++we use an Exponentially Weighted Moving Average (EWMA), each period (1024us)
++is decayed such that y^32 = 0.5. That is, the most recent 32ms contribute
++half, while the rest of history contribute the other half.
++
++Specifically:
++
++  ewma_sum(u) := u_0 + u_1*y + u_2*y^2 + ...
++
++  ewma(u) = ewma_sum(u) / ewma_sum(1)
++
++Since this is essentially a progression of an infinite geometric series, the
++results are composable, that is ewma(A) + ewma(B) = ewma(A+B). This property
++is key, since it gives the ability to recompose the averages when tasks move
++around.
++
++Note that blocked tasks still contribute to the aggregates (task-group slices
++and CPU runqueues), which reflects their expected contribution when they
++resume running.
++
++Using this we track 2 key metrics: 'running' and 'runnable'. 'Running'
++reflects the time an entity spends on the CPU, while 'runnable' reflects the
++time an entity spends on the runqueue. When there is only a single task these
++two metrics are the same, but once there is contention for the CPU 'running'
++will decrease to reflect the fraction of time each task spends on the CPU
++while 'runnable' will increase to reflect the amount of contention.
++
++For more detail see: kernel/sched/pelt.c
++
++
++Frequency- / CPU Invariance
++---------------------------
++
++Because consuming the CPU for 50% at 1GHz is not the same as consuming the CPU
++for 50% at 2GHz, nor is running 50% on a LITTLE CPU the same as running 50% on
++a big CPU, we allow architectures to scale the time delta with two ratios, one
++Dynamic Voltage and Frequency Scaling (DVFS) ratio and one microarch ratio.
++
++For simple DVFS architectures (where software is in full control) we trivially
++compute the ratio as:
++
++	    f_cur
++  r_dvfs := -----
++            f_max
++
++For more dynamic systems where the hardware is in control of DVFS we use
++hardware counters (Intel APERF/MPERF, ARMv8.4-AMU) to provide us this ratio.
++For Intel specifically, we use:
++
++	   APERF
++  f_cur := ----- * P0
++	   MPERF
++
++	     4C-turbo;	if available and turbo enabled
++  f_max := { 1C-turbo;	if turbo enabled
++	     P0;	otherwise
++
++                    f_cur
++  r_dvfs := min( 1, ----- )
++                    f_max
++
++We pick 4C turbo over 1C turbo to make it slightly more sustainable.
++
++r_cpu is determined as the ratio of highest performance level of the current
++CPU vs the highest performance level of any other CPU in the system.
++
++  r_tot = r_dvfs * r_cpu
++
++The result is that the above 'running' and 'runnable' metrics become invariant
++of DVFS and CPU type. IOW. we can transfer and compare them between CPUs.
++
++For more detail see:
++
++ - kernel/sched/pelt.h:update_rq_clock_pelt()
++ - arch/x86/kernel/smpboot.c:"APERF/MPERF frequency ratio computation."
++ - Documentation/scheduler/sched-capacity.rst:"1. CPU Capacity + 2. Task utilization"
++
++
++UTIL_EST / UTIL_EST_FASTUP
++--------------------------
++
++Because periodic tasks have their averages decayed while they sleep, even
++though when running their expected utilization will be the same, they suffer a
++(DVFS) ramp-up after they are running again.
++
++To alleviate this (a default enabled option) UTIL_EST drives an Infinite
++Impulse Response (IIR) EWMA with the 'running' value on dequeue -- when it is
++highest. A further default enabled option UTIL_EST_FASTUP modifies the IIR
++filter to instantly increase and only decay on decrease.
++
++A further runqueue wide sum (of runnable tasks) is maintained of:
++
++  util_est := \Sum_t max( t_running, t_util_est_ewma )
++
++For more detail see: kernel/sched/fair.c:util_est_dequeue()
++
++
++UCLAMP
++------
++
++It is possible to set effective u_min and u_max clamps on each CFS or RT task;
++the runqueue keeps an max aggregate of these clamps for all running tasks.
++
++For more detail see: include/uapi/linux/sched/types.h
++
++
++Schedutil / DVFS
++----------------
++
++Every time the scheduler load tracking is updated (task wakeup, task
++migration, time progression) we call out to schedutil to update the hardware
++DVFS state.
++
++The basis is the CPU runqueue's 'running' metric, which per the above it is
++the frequency invariant utilization estimate of the CPU. From this we compute
++a desired frequency like:
++
++             max( running, util_est );	if UTIL_EST
++  u_cfs := { running;			otherwise
++
++               clamp( u_cfs + u_rt , u_min, u_max );	if UCLAMP_TASK
++  u_clamp := { u_cfs + u_rt;				otherwise
++
++  u := u_clamp + u_irq + u_dl;		[approx. see source for more detail]
++
++  f_des := min( f_max, 1.25 u * f_max )
++
++XXX IO-wait; when the update is due to a task wakeup from IO-completion we
++boost 'u' above.
++
++This frequency is then used to select a P-state/OPP or directly munged into a
++CPPC style request to the hardware.
++
++XXX: deadline tasks (Sporadic Task Model) allows us to calculate a hard f_min
++required to satisfy the workload.
++
++Because these callbacks are directly from the scheduler, the DVFS hardware
++interaction should be 'fast' and non-blocking. Schedutil supports
++rate-limiting DVFS requests for when hardware interaction is slow and
++expensive, this reduces effectiveness.
++
++For more information see: kernel/sched/cpufreq_schedutil.c
++
++
++NOTES
++-----
++
++ - On low-load scenarios, where DVFS is most relevant, the 'running' numbers
++   will closely reflect utilization.
++
++ - In saturated scenarios task movement will cause some transient dips,
++   suppose we have a CPU saturated with 4 tasks, then when we migrate a task
++   to an idle CPU, the old CPU will have a 'running' value of 0.75 while the
++   new CPU will gain 0.25. This is inevitable and time progression will
++   correct this. XXX do we still guarantee f_max due to no idle-time?
++
++ - Much of the above is about avoiding DVFS dips, and independent DVFS domains
++   having to re-learn / ramp-up when load shifts.
++
+-- 
+2.30.0
+
+From 8c1f560c1ea3f19e22ba356f62680d9d449c9ec2 Mon Sep 17 00:00:00 2001
+From: Xuewen Yan <xuewen.yan@unisoc.com>
+Date: Fri, 18 Dec 2020 17:27:52 +0800
+Subject: [PATCH] sched/fair: Avoid stale CPU util_est value for schedutil in
+ task dequeue
+
+CPU (root cfs_rq) estimated utilization (util_est) is currently used in
+dequeue_task_fair() to drive frequency selection before it is updated.
+
+with:
+
+CPU_util        : rq->cfs.avg.util_avg
+CPU_util_est    : rq->cfs.avg.util_est
+CPU_utilization : max(CPU_util, CPU_util_est)
+task_util       : p->se.avg.util_avg
+task_util_est   : p->se.avg.util_est
+
+dequeue_task_fair():
+
+    /* (1) CPU_util and task_util update + inform schedutil about
+           CPU_utilization changes */
+    for_each_sched_entity() /* 2 loops */
+        (dequeue_entity() ->) update_load_avg() -> cfs_rq_util_change()
+         -> cpufreq_update_util() ->...-> sugov_update_[shared\|single]
+         -> sugov_get_util() -> cpu_util_cfs()
+
+    /* (2) CPU_util_est and task_util_est update */
+    util_est_dequeue()
+
+cpu_util_cfs() uses CPU_utilization which could lead to a false (too
+high) utilization value for schedutil in task ramp-down or ramp-up
+scenarios during task dequeue.
+
+To mitigate the issue split the util_est update (2) into:
+
+ (A) CPU_util_est update in util_est_dequeue()
+ (B) task_util_est update in util_est_update()
+
+Place (A) before (1) and keep (B) where (2) is. The latter is necessary
+since (B) relies on task_util update in (1).
+
+Fixes: 7f65ea42eb00 ("sched/fair: Add util_est on top of PELT")
+Signed-off-by: Xuewen Yan <xuewen.yan@unisoc.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Dietmar Eggemann <dietmar.eggemann@arm.com>
+Reviewed-by: Vincent Guittot <vincent.guittot@linaro.org>
+Link: https://lkml.kernel.org/r/1608283672-18240-1-git-send-email-xuewen.yan94@gmail.com
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/fair.c | 43 ++++++++++++++++++++++++++++---------------
+ 1 file changed, 28 insertions(+), 15 deletions(-)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 389cb5865..40d3ebfb5 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -3943,6 +3943,22 @@ static inline void util_est_enqueue(struct cfs_rq *cfs_rq,
+ 	trace_sched_util_est_cfs_tp(cfs_rq);
+ }
+ 
++static inline void util_est_dequeue(struct cfs_rq *cfs_rq,
++				    struct task_struct *p)
++{
++	unsigned int enqueued;
++
++	if (!sched_feat(UTIL_EST))
++		return;
++
++	/* Update root cfs_rq's estimated utilization */
++	enqueued  = cfs_rq->avg.util_est.enqueued;
++	enqueued -= min_t(unsigned int, enqueued, _task_util_est(p));
++	WRITE_ONCE(cfs_rq->avg.util_est.enqueued, enqueued);
++
++	trace_sched_util_est_cfs_tp(cfs_rq);
++}
++
+ /*
+  * Check if a (signed) value is within a specified (unsigned) margin,
+  * based on the observation that:
+@@ -3956,23 +3972,16 @@ static inline bool within_margin(int value, int margin)
+ 	return ((unsigned int)(value + margin - 1) < (2 * margin - 1));
+ }
+ 
+-static void
+-util_est_dequeue(struct cfs_rq *cfs_rq, struct task_struct *p, bool task_sleep)
++static inline void util_est_update(struct cfs_rq *cfs_rq,
++				   struct task_struct *p,
++				   bool task_sleep)
+ {
+ 	long last_ewma_diff;
+ 	struct util_est ue;
+-	int cpu;
+ 
+ 	if (!sched_feat(UTIL_EST))
+ 		return;
+ 
+-	/* Update root cfs_rq's estimated utilization */
+-	ue.enqueued  = cfs_rq->avg.util_est.enqueued;
+-	ue.enqueued -= min_t(unsigned int, ue.enqueued, _task_util_est(p));
+-	WRITE_ONCE(cfs_rq->avg.util_est.enqueued, ue.enqueued);
+-
+-	trace_sched_util_est_cfs_tp(cfs_rq);
+-
+ 	/*
+ 	 * Skip update of task's estimated utilization when the task has not
+ 	 * yet completed an activation, e.g. being migrated.
+@@ -4012,8 +4021,7 @@ util_est_dequeue(struct cfs_rq *cfs_rq, struct task_struct *p, bool task_sleep)
+ 	 * To avoid overestimation of actual task utilization, skip updates if
+ 	 * we cannot grant there is idle time in this CPU.
+ 	 */
+-	cpu = cpu_of(rq_of(cfs_rq));
+-	if (task_util(p) > capacity_orig_of(cpu))
++	if (task_util(p) > capacity_orig_of(cpu_of(rq_of(cfs_rq))))
+ 		return;
+ 
+ 	/*
+@@ -4096,8 +4104,11 @@ static inline void
+ util_est_enqueue(struct cfs_rq *cfs_rq, struct task_struct *p) {}
+ 
+ static inline void
+-util_est_dequeue(struct cfs_rq *cfs_rq, struct task_struct *p,
+-		 bool task_sleep) {}
++util_est_dequeue(struct cfs_rq *cfs_rq, struct task_struct *p) {}
++
++static inline void
++util_est_update(struct cfs_rq *cfs_rq, struct task_struct *p,
++		bool task_sleep) {}
+ static inline void update_misfit_status(struct task_struct *p, struct rq *rq) {}
+ 
+ #endif /* CONFIG_SMP */
+@@ -5609,6 +5620,8 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
+ 	int idle_h_nr_running = task_has_idle_policy(p);
+ 	bool was_sched_idle = sched_idle_rq(rq);
+ 
++	util_est_dequeue(&rq->cfs, p);
++
+ 	for_each_sched_entity(se) {
+ 		cfs_rq = cfs_rq_of(se);
+ 		dequeue_entity(cfs_rq, se, flags);
+@@ -5659,7 +5672,7 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
+ 		rq->next_balance = jiffies;
+ 
+ dequeue_throttle:
+-	util_est_dequeue(&rq->cfs, p, task_sleep);
++	util_est_update(&rq->cfs, p, task_sleep);
+ 	hrtick_update(rq);
+ }
+ 
+-- 
+2.30.0
+
+From fc488ffd4297f661b3e9d7450dcdb9089a53df7c Mon Sep 17 00:00:00 2001
+From: Vincent Guittot <vincent.guittot@linaro.org>
+Date: Thu, 7 Jan 2021 11:33:23 +0100
+Subject: [PATCH] sched/fair: Skip idle cfs_rq
+
+Don't waste time checking whether an idle cfs_rq could be the busiest
+queue. Furthermore, this can end up selecting a cfs_rq with a high load
+but being idle in case of migrate_load.
+
+Signed-off-by: Vincent Guittot <vincent.guittot@linaro.org>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Valentin Schneider <valentin.schneider@arm.com>
+Acked-by: Mel Gorman <mgorman@suse.de>
+Link: https://lkml.kernel.org/r/20210107103325.30851-2-vincent.guittot@linaro.org
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/fair.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 40d3ebfb5..13de7aede 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -9402,8 +9402,11 @@ static struct rq *find_busiest_queue(struct lb_env *env,
+ 		if (rt > env->fbq_type)
+ 			continue;
+ 
+-		capacity = capacity_of(i);
+ 		nr_running = rq->cfs.h_nr_running;
++		if (!nr_running)
++			continue;
++
++		capacity = capacity_of(i);
+ 
+ 		/*
+ 		 * For ASYM_CPUCAPACITY domains, don't pick a CPU that could
+-- 
+2.30.0
+
+From 8a41dfcda7a32ed4435c00d98a9dc7156b08b671 Mon Sep 17 00:00:00 2001
+From: Vincent Guittot <vincent.guittot@linaro.org>
+Date: Thu, 7 Jan 2021 11:33:24 +0100
+Subject: [PATCH] sched/fair: Don't set LBF_ALL_PINNED unnecessarily
+
+Setting LBF_ALL_PINNED during active load balance is only valid when there
+is only 1 running task on the rq otherwise this ends up increasing the
+balance interval whereas other tasks could migrate after the next interval
+once they become cache-cold as an example.
+
+LBF_ALL_PINNED flag is now always set it by default. It is then cleared
+when we find one task that can be pulled when calling detach_tasks() or
+during active migration.
+
+Signed-off-by: Vincent Guittot <vincent.guittot@linaro.org>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Valentin Schneider <valentin.schneider@arm.com>
+Acked-by: Mel Gorman <mgorman@suse.de>
+Link: https://lkml.kernel.org/r/20210107103325.30851-3-vincent.guittot@linaro.org
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/fair.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 13de7aede..48f99c8a5 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -9639,6 +9639,8 @@ static int load_balance(int this_cpu, struct rq *this_rq,
+ 	env.src_rq = busiest;
+ 
+ 	ld_moved = 0;
++	/* Clear this flag as soon as we find a pullable task */
++	env.flags |= LBF_ALL_PINNED;
+ 	if (busiest->nr_running > 1) {
+ 		/*
+ 		 * Attempt to move tasks. If find_busiest_group has found
+@@ -9646,7 +9648,6 @@ static int load_balance(int this_cpu, struct rq *this_rq,
+ 		 * still unbalanced. ld_moved simply stays zero, so it is
+ 		 * correctly treated as an imbalance.
+ 		 */
+-		env.flags |= LBF_ALL_PINNED;
+ 		env.loop_max  = min(sysctl_sched_nr_migrate, busiest->nr_running);
+ 
+ more_balance:
+@@ -9772,10 +9773,12 @@ static int load_balance(int this_cpu, struct rq *this_rq,
+ 			if (!cpumask_test_cpu(this_cpu, busiest->curr->cpus_ptr)) {
+ 				raw_spin_unlock_irqrestore(&busiest->lock,
+ 							    flags);
+-				env.flags |= LBF_ALL_PINNED;
+ 				goto out_one_pinned;
+ 			}
+ 
++			/* Record that we found at least one task that could run on this_cpu */
++			env.flags &= ~LBF_ALL_PINNED;
++
+ 			/*
+ 			 * ->active_balance synchronizes accesses to
+ 			 * ->active_balance_work.  Once set, it's cleared
+-- 
+2.30.0
+
+From e9b9734b74656abb585a7f6fabf1d30ce00e51ea Mon Sep 17 00:00:00 2001
+From: Vincent Guittot <vincent.guittot@linaro.org>
+Date: Thu, 7 Jan 2021 11:33:25 +0100
+Subject: [PATCH] sched/fair: Reduce cases for active balance
+
+Active balance is triggered for a number of voluntary cases like misfit
+or pinned tasks cases but also after that a number of load balance
+attempts failed to migrate a task. There is no need to use active load
+balance when the group is overloaded because an overloaded state means
+that there is at least one waiting task. Nevertheless, the waiting task
+is not selected and detached until the threshold becomes higher than its
+load. This threshold increases with the number of failed lb (see the
+condition if ((load >> env->sd->nr_balance_failed) > env->imbalance) in
+detach_tasks()) and the waiting task will end up to be selected after a
+number of attempts.
+
+Signed-off-by: Vincent Guittot <vincent.guittot@linaro.org>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Valentin Schneider <valentin.schneider@arm.com>
+Acked-by: Mel Gorman <mgorman@suse.de>
+Link: https://lkml.kernel.org/r/20210107103325.30851-4-vincent.guittot@linaro.org
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/fair.c | 45 +++++++++++++++++++++++----------------------
+ 1 file changed, 23 insertions(+), 22 deletions(-)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 48f99c8a5..53802b77c 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -9512,13 +9512,32 @@ asym_active_balance(struct lb_env *env)
+ }
+ 
+ static inline bool
+-voluntary_active_balance(struct lb_env *env)
++imbalanced_active_balance(struct lb_env *env)
++{
++	struct sched_domain *sd = env->sd;
++
++	/*
++	 * The imbalanced case includes the case of pinned tasks preventing a fair
++	 * distribution of the load on the system but also the even distribution of the
++	 * threads on a system with spare capacity
++	 */
++	if ((env->migration_type == migrate_task) &&
++	    (sd->nr_balance_failed > sd->cache_nice_tries+2))
++		return 1;
++
++	return 0;
++}
++
++static int need_active_balance(struct lb_env *env)
+ {
+ 	struct sched_domain *sd = env->sd;
+ 
+ 	if (asym_active_balance(env))
+ 		return 1;
+ 
++	if (imbalanced_active_balance(env))
++		return 1;
++
+ 	/*
+ 	 * The dst_cpu is idle and the src_cpu CPU has only 1 CFS task.
+ 	 * It's worth migrating the task if the src_cpu's capacity is reduced
+@@ -9538,16 +9557,6 @@ voluntary_active_balance(struct lb_env *env)
+ 	return 0;
+ }
+ 
+-static int need_active_balance(struct lb_env *env)
+-{
+-	struct sched_domain *sd = env->sd;
+-
+-	if (voluntary_active_balance(env))
+-		return 1;
+-
+-	return unlikely(sd->nr_balance_failed > sd->cache_nice_tries+2);
+-}
+-
+ static int active_load_balance_cpu_stop(void *data);
+ 
+ static int should_we_balance(struct lb_env *env)
+@@ -9800,21 +9809,13 @@ static int load_balance(int this_cpu, struct rq *this_rq,
+ 			/* We've kicked active balancing, force task migration. */
+ 			sd->nr_balance_failed = sd->cache_nice_tries+1;
+ 		}
+-	} else
++	} else {
+ 		sd->nr_balance_failed = 0;
++	}
+ 
+-	if (likely(!active_balance) || voluntary_active_balance(&env)) {
++	if (likely(!active_balance) || need_active_balance(&env)) {
+ 		/* We were unbalanced, so reset the balancing interval */
+ 		sd->balance_interval = sd->min_interval;
+-	} else {
+-		/*
+-		 * If we've begun active balancing, start to back off. This
+-		 * case may not be covered by the all_pinned logic if there
+-		 * is only 1 task on the busy runqueue (because we don't call
+-		 * detach_tasks).
+-		 */
+-		if (sd->balance_interval < sd->max_interval)
+-			sd->balance_interval *= 2;
+ 	}
+ 
+ 	goto out;
+-- 
+2.30.0
+
+From 65bcf072e20ed7597caa902f170f293662b0af3c Mon Sep 17 00:00:00 2001
+From: Hui Su <sh_def@163.com>
+Date: Sat, 31 Oct 2020 01:32:23 +0800
+Subject: [PATCH] sched: Use task_current() instead of 'rq->curr == p'
+
+Use the task_current() function where appropriate.
+
+No functional change.
+
+Signed-off-by: Hui Su <sh_def@163.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Steven Rostedt (VMware) <rostedt@goodmis.org>
+Link: https://lkml.kernel.org/r/20201030173223.GA52339@rlk
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/deadline.c | 2 +-
+ kernel/sched/debug.c    | 2 +-
+ kernel/sched/fair.c     | 6 +++---
+ kernel/sched/rt.c       | 2 +-
+ 4 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/kernel/sched/deadline.c b/kernel/sched/deadline.c
+index 75686c6d4..5421782fe 100644
+--- a/kernel/sched/deadline.c
++++ b/kernel/sched/deadline.c
+@@ -2514,7 +2514,7 @@ static void switched_to_dl(struct rq *rq, struct task_struct *p)
+ static void prio_changed_dl(struct rq *rq, struct task_struct *p,
+ 			    int oldprio)
+ {
+-	if (task_on_rq_queued(p) || rq->curr == p) {
++	if (task_on_rq_queued(p) || task_current(rq, p)) {
+ #ifdef CONFIG_SMP
+ 		/*
+ 		 * This might be too much, but unfortunately
+diff --git a/kernel/sched/debug.c b/kernel/sched/debug.c
+index 235792158..486f403a7 100644
+--- a/kernel/sched/debug.c
++++ b/kernel/sched/debug.c
+@@ -486,7 +486,7 @@ static char *task_group_path(struct task_group *tg)
+ static void
+ print_task(struct seq_file *m, struct rq *rq, struct task_struct *p)
+ {
+-	if (rq->curr == p)
++	if (task_current(rq, p))
+ 		SEQ_printf(m, ">R");
+ 	else
+ 		SEQ_printf(m, " %c", task_state_to_char(p));
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 53802b77c..197a51473 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -5430,7 +5430,7 @@ static void hrtick_start_fair(struct rq *rq, struct task_struct *p)
+ 		s64 delta = slice - ran;
+ 
+ 		if (delta < 0) {
+-			if (rq->curr == p)
++			if (task_current(rq, p))
+ 				resched_curr(rq);
+ 			return;
+ 		}
+@@ -10829,7 +10829,7 @@ prio_changed_fair(struct rq *rq, struct task_struct *p, int oldprio)
+ 	 * our priority decreased, or if we are not currently running on
+ 	 * this runqueue and our priority is higher than the current's
+ 	 */
+-	if (rq->curr == p) {
++	if (task_current(rq, p)) {
+ 		if (p->prio > oldprio)
+ 			resched_curr(rq);
+ 	} else
+@@ -10962,7 +10962,7 @@ static void switched_to_fair(struct rq *rq, struct task_struct *p)
+ 		 * kick off the schedule if running, otherwise just see
+ 		 * if we can still preempt the current task.
+ 		 */
+-		if (rq->curr == p)
++		if (task_current(rq, p))
+ 			resched_curr(rq);
+ 		else
+ 			check_preempt_curr(rq, p, 0);
+diff --git a/kernel/sched/rt.c b/kernel/sched/rt.c
+index dbe4629cf..8f720b71d 100644
+--- a/kernel/sched/rt.c
++++ b/kernel/sched/rt.c
+@@ -2357,7 +2357,7 @@ prio_changed_rt(struct rq *rq, struct task_struct *p, int oldprio)
+ 	if (!task_on_rq_queued(p))
+ 		return;
+ 
+-	if (rq->curr == p) {
++	if (task_current(rq, p)) {
+ #ifdef CONFIG_SMP
+ 		/*
+ 		 * If our priority decreases while running, we
+-- 
+2.30.0
+
+From 0ae78eec8aa64e645866e75005162603a77a0f49 Mon Sep 17 00:00:00 2001
+From: Qais Yousef <qais.yousef@arm.com>
+Date: Tue, 19 Jan 2021 12:07:55 +0000
+Subject: [PATCH] sched/eas: Don't update misfit status if the task is pinned
+
+If the task is pinned to a cpu, setting the misfit status means that
+we'll unnecessarily continuously attempt to migrate the task but fail.
+
+This continuous failure will cause the balance_interval to increase to
+a high value, and eventually cause unnecessary significant delays in
+balancing the system when real imbalance happens.
+
+Caught while testing uclamp where rt-app calibration loop was pinned to
+cpu 0, shortly after which we spawn another task with high util_clamp
+value. The task was failing to migrate after over 40ms of runtime due to
+balance_interval unnecessary expanded to a very high value from the
+calibration loop.
+
+Not done here, but it could be useful to extend the check for pinning to
+verify that the affinity of the task has a cpu that fits. We could end
+up in a similar situation otherwise.
+
+Fixes: 3b1baa6496e6 ("sched/fair: Add 'group_misfit_task' load-balance type")
+Signed-off-by: Qais Yousef <qais.yousef@arm.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Quentin Perret <qperret@google.com>
+Acked-by: Valentin Schneider <valentin.schneider@arm.com>
+Link: https://lkml.kernel.org/r/20210119120755.2425264-1-qais.yousef@arm.com
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/fair.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 197a51473..9379a481d 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -4060,7 +4060,7 @@ static inline void update_misfit_status(struct task_struct *p, struct rq *rq)
+ 	if (!static_branch_unlikely(&sched_asym_cpucapacity))
+ 		return;
+ 
+-	if (!p) {
++	if (!p || p->nr_cpus_allowed == 1) {
+ 		rq->misfit_task_load = 0;
+ 		return;
+ 	}
+-- 
+2.30.0
+
+From 620a6dc40754dc218f5b6389b5d335e9a107fd29 Mon Sep 17 00:00:00 2001
+From: Valentin Schneider <valentin.schneider@arm.com>
+Date: Fri, 22 Jan 2021 12:39:43 +0000
+Subject: [PATCH] sched/topology: Make sched_init_numa() use a set for the
+ deduplicating sort
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The deduplicating sort in sched_init_numa() assumes that the first line in
+the distance table contains all unique values in the entire table. I've
+been trying to pen what this exactly means for the topology, but it's not
+straightforward. For instance, topology.c uses this example:
+
+  node   0   1   2   3
+    0:  10  20  20  30
+    1:  20  10  20  20
+    2:  20  20  10  20
+    3:  30  20  20  10
+
+  0 ----- 1
+  |     / |
+  |   /   |
+  | /     |
+  2 ----- 3
+
+Which works out just fine. However, if we swap nodes 0 and 1:
+
+  1 ----- 0
+  |     / |
+  |   /   |
+  | /     |
+  2 ----- 3
+
+we get this distance table:
+
+  node   0  1  2  3
+    0:  10 20 20 20
+    1:  20 10 20 30
+    2:  20 20 10 20
+    3:  20 30 20 10
+
+Which breaks the deduplicating sort (non-representative first line). In
+this case this would just be a renumbering exercise, but it so happens that
+we can have a deduplicating sort that goes through the whole table in O(n²)
+at the extra cost of a temporary memory allocation (i.e. any form of set).
+
+The ACPI spec (SLIT) mentions distances are encoded on 8 bits. Following
+this, implement the set as a 256-bits bitmap. Should this not be
+satisfactory (i.e. we want to support 32-bit values), then we'll have to go
+for some other sparse set implementation.
+
+This has the added benefit of letting us allocate just the right amount of
+memory for sched_domains_numa_distance[], rather than an arbitrary
+(nr_node_ids + 1).
+
+Note: DT binding equivalent (distance-map) decodes distances as 32-bit
+values.
+
+Signed-off-by: Valentin Schneider <valentin.schneider@arm.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Link: https://lkml.kernel.org/r/20210122123943.1217-2-valentin.schneider@arm.com
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ include/linux/topology.h |  1 +
+ kernel/sched/topology.c  | 99 +++++++++++++++++++---------------------
+ 2 files changed, 49 insertions(+), 51 deletions(-)
+
+diff --git a/include/linux/topology.h b/include/linux/topology.h
+index ad03df1cc..7634cd737 100644
+--- a/include/linux/topology.h
++++ b/include/linux/topology.h
+@@ -48,6 +48,7 @@ int arch_update_cpu_topology(void);
+ /* Conform to ACPI 2.0 SLIT distance definitions */
+ #define LOCAL_DISTANCE		10
+ #define REMOTE_DISTANCE		20
++#define DISTANCE_BITS           8
+ #ifndef node_distance
+ #define node_distance(from,to)	((from) == (to) ? LOCAL_DISTANCE : REMOTE_DISTANCE)
+ #endif
+diff --git a/kernel/sched/topology.c b/kernel/sched/topology.c
+index 5d3675c7a..bf5c9bd10 100644
+--- a/kernel/sched/topology.c
++++ b/kernel/sched/topology.c
+@@ -1596,66 +1596,58 @@ static void init_numa_topology_type(void)
+ 	}
+ }
+ 
++
++#define NR_DISTANCE_VALUES (1 << DISTANCE_BITS)
++
+ void sched_init_numa(void)
+ {
+-	int next_distance, curr_distance = node_distance(0, 0);
+ 	struct sched_domain_topology_level *tl;
+-	int level = 0;
+-	int i, j, k;
+-
+-	sched_domains_numa_distance = kzalloc(sizeof(int) * (nr_node_ids + 1), GFP_KERNEL);
+-	if (!sched_domains_numa_distance)
+-		return;
+-
+-	/* Includes NUMA identity node at level 0. */
+-	sched_domains_numa_distance[level++] = curr_distance;
+-	sched_domains_numa_levels = level;
++	unsigned long *distance_map;
++	int nr_levels = 0;
++	int i, j;
+ 
+ 	/*
+ 	 * O(nr_nodes^2) deduplicating selection sort -- in order to find the
+ 	 * unique distances in the node_distance() table.
+-	 *
+-	 * Assumes node_distance(0,j) includes all distances in
+-	 * node_distance(i,j) in order to avoid cubic time.
+ 	 */
+-	next_distance = curr_distance;
++	distance_map = bitmap_alloc(NR_DISTANCE_VALUES, GFP_KERNEL);
++	if (!distance_map)
++		return;
++
++	bitmap_zero(distance_map, NR_DISTANCE_VALUES);
+ 	for (i = 0; i < nr_node_ids; i++) {
+ 		for (j = 0; j < nr_node_ids; j++) {
+-			for (k = 0; k < nr_node_ids; k++) {
+-				int distance = node_distance(i, k);
+-
+-				if (distance > curr_distance &&
+-				    (distance < next_distance ||
+-				     next_distance == curr_distance))
+-					next_distance = distance;
+-
+-				/*
+-				 * While not a strong assumption it would be nice to know
+-				 * about cases where if node A is connected to B, B is not
+-				 * equally connected to A.
+-				 */
+-				if (sched_debug() && node_distance(k, i) != distance)
+-					sched_numa_warn("Node-distance not symmetric");
++			int distance = node_distance(i, j);
+ 
+-				if (sched_debug() && i && !find_numa_distance(distance))
+-					sched_numa_warn("Node-0 not representative");
++			if (distance < LOCAL_DISTANCE || distance >= NR_DISTANCE_VALUES) {
++				sched_numa_warn("Invalid distance value range");
++				return;
+ 			}
+-			if (next_distance != curr_distance) {
+-				sched_domains_numa_distance[level++] = next_distance;
+-				sched_domains_numa_levels = level;
+-				curr_distance = next_distance;
+-			} else break;
++
++			bitmap_set(distance_map, distance, 1);
+ 		}
++	}
++	/*
++	 * We can now figure out how many unique distance values there are and
++	 * allocate memory accordingly.
++	 */
++	nr_levels = bitmap_weight(distance_map, NR_DISTANCE_VALUES);
+ 
+-		/*
+-		 * In case of sched_debug() we verify the above assumption.
+-		 */
+-		if (!sched_debug())
+-			break;
++	sched_domains_numa_distance = kcalloc(nr_levels, sizeof(int), GFP_KERNEL);
++	if (!sched_domains_numa_distance) {
++		bitmap_free(distance_map);
++		return;
++	}
++
++	for (i = 0, j = 0; i < nr_levels; i++, j++) {
++		j = find_next_bit(distance_map, NR_DISTANCE_VALUES, j);
++		sched_domains_numa_distance[i] = j;
+ 	}
+ 
++	bitmap_free(distance_map);
++
+ 	/*
+-	 * 'level' contains the number of unique distances
++	 * 'nr_levels' contains the number of unique distances
+ 	 *
+ 	 * The sched_domains_numa_distance[] array includes the actual distance
+ 	 * numbers.
+@@ -1664,15 +1656,15 @@ void sched_init_numa(void)
+ 	/*
+ 	 * Here, we should temporarily reset sched_domains_numa_levels to 0.
+ 	 * If it fails to allocate memory for array sched_domains_numa_masks[][],
+-	 * the array will contain less then 'level' members. This could be
++	 * the array will contain less then 'nr_levels' members. This could be
+ 	 * dangerous when we use it to iterate array sched_domains_numa_masks[][]
+ 	 * in other functions.
+ 	 *
+-	 * We reset it to 'level' at the end of this function.
++	 * We reset it to 'nr_levels' at the end of this function.
+ 	 */
+ 	sched_domains_numa_levels = 0;
+ 
+-	sched_domains_numa_masks = kzalloc(sizeof(void *) * level, GFP_KERNEL);
++	sched_domains_numa_masks = kzalloc(sizeof(void *) * nr_levels, GFP_KERNEL);
+ 	if (!sched_domains_numa_masks)
+ 		return;
+ 
+@@ -1680,7 +1672,7 @@ void sched_init_numa(void)
+ 	 * Now for each level, construct a mask per node which contains all
+ 	 * CPUs of nodes that are that many hops away from us.
+ 	 */
+-	for (i = 0; i < level; i++) {
++	for (i = 0; i < nr_levels; i++) {
+ 		sched_domains_numa_masks[i] =
+ 			kzalloc(nr_node_ids * sizeof(void *), GFP_KERNEL);
+ 		if (!sched_domains_numa_masks[i])
+@@ -1688,12 +1680,17 @@ void sched_init_numa(void)
+ 
+ 		for (j = 0; j < nr_node_ids; j++) {
+ 			struct cpumask *mask = kzalloc(cpumask_size(), GFP_KERNEL);
++			int k;
++
+ 			if (!mask)
+ 				return;
+ 
+ 			sched_domains_numa_masks[i][j] = mask;
+ 
+ 			for_each_node(k) {
++				if (sched_debug() && (node_distance(j, k) != node_distance(k, j)))
++					sched_numa_warn("Node-distance not symmetric");
++
+ 				if (node_distance(j, k) > sched_domains_numa_distance[i])
+ 					continue;
+ 
+@@ -1705,7 +1702,7 @@ void sched_init_numa(void)
+ 	/* Compute default topology size */
+ 	for (i = 0; sched_domain_topology[i].mask; i++);
+ 
+-	tl = kzalloc((i + level + 1) *
++	tl = kzalloc((i + nr_levels) *
+ 			sizeof(struct sched_domain_topology_level), GFP_KERNEL);
+ 	if (!tl)
+ 		return;
+@@ -1728,7 +1725,7 @@ void sched_init_numa(void)
+ 	/*
+ 	 * .. and append 'j' levels of NUMA goodness.
+ 	 */
+-	for (j = 1; j < level; i++, j++) {
++	for (j = 1; j < nr_levels; i++, j++) {
+ 		tl[i] = (struct sched_domain_topology_level){
+ 			.mask = sd_numa_mask,
+ 			.sd_flags = cpu_numa_flags,
+@@ -1740,8 +1737,8 @@ void sched_init_numa(void)
+ 
+ 	sched_domain_topology = tl;
+ 
+-	sched_domains_numa_levels = level;
+-	sched_max_numa_distance = sched_domains_numa_distance[level - 1];
++	sched_domains_numa_levels = nr_levels;
++	sched_max_numa_distance = sched_domains_numa_distance[nr_levels - 1];
+ 
+ 	init_numa_topology_type();
+ }
+-- 
+2.30.0
+
+From 432900f8164b77376df2c25113fb94f9d7fffd79 Mon Sep 17 00:00:00 2001
+From: Yue Hu <huyue2@yulong.com>
+Date: Wed, 27 Jan 2021 13:44:51 +0800
+Subject: [PATCH] init/Kconfig: Correct thermal pressure help text
+
+We're using arch_scale_thermal_pressure() to retrieve per CPU thermal
+pressure.
+
+Signed-off-by: Yue Hu <huyue2@yulong.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Valentin Schneider <valentin.schneider@arm.com>
+Link: https://lkml.kernel.org/r/20210127054451.1240-1-zbestahu@gmail.com
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ init/Kconfig | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/init/Kconfig b/init/Kconfig
+index b77c60f8b..058b99d12 100644
+--- a/init/Kconfig
++++ b/init/Kconfig
+@@ -525,7 +525,7 @@ config SCHED_THERMAL_PRESSURE
+ 	  i.e. put less load on throttled CPUs than on non/less throttled ones.
+ 
+ 	  This requires the architecture to implement
+-	  arch_set_thermal_pressure() and arch_get_thermal_pressure().
++	  arch_set_thermal_pressure() and arch_scale_thermal_pressure().
+ 
+ config BSD_PROCESS_ACCT
+ 	bool "BSD Process Accounting"
+-- 
+2.30.0
+
+From 1875dc5b8ff4690547c446ef222083e28e2d9463 Mon Sep 17 00:00:00 2001
+From: Peter Oskolkov <posk@google.com>
+Date: Tue, 26 Jan 2021 11:34:49 -0800
+Subject: [PATCH] sched: Correctly sort struct predeclarations
+
+The comment says:
+  /* task_struct member predeclarations (sorted alphabetically): */
+
+So move io_uring_task where it belongs (alphabetically).
+
+Signed-off-by: Peter Oskolkov <posk@google.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Link: https://lkml.kernel.org/r/20210126193449.487547-1-posk@google.com
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ include/linux/sched.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/include/linux/sched.h b/include/linux/sched.h
+index 31169e704..e1152227b 100644
+--- a/include/linux/sched.h
++++ b/include/linux/sched.h
+@@ -47,6 +47,7 @@ struct cfs_rq;
+ struct fs_struct;
+ struct futex_pi_state;
+ struct io_context;
++struct io_uring_task;
+ struct mempolicy;
+ struct nameidata;
+ struct nsproxy;
+@@ -65,7 +66,6 @@ struct sighand_struct;
+ struct signal_struct;
+ struct task_delay_info;
+ struct task_group;
+-struct io_uring_task;
+ 
+ /*
+  * Task state bitmask. NOTE! These bits are also
+-- 
+2.30.0
+
+From e6e0dc2d5497f7f3ed970052917e2923c6f453f4 Mon Sep 17 00:00:00 2001
+From: Mel Gorman <mgorman@techsingularity.net>
+Date: Mon, 25 Jan 2021 08:59:06 +0000
+Subject: [PATCH] sched/fair: Remove SIS_AVG_CPU
+
+SIS_AVG_CPU was introduced as a means of avoiding a search when the
+average search cost indicated that the search would likely fail. It was
+a blunt instrument and disabled by commit 4c77b18cf8b7 ("sched/fair: Make
+select_idle_cpu() more aggressive") and later replaced with a proportional
+search depth by commit 1ad3aaf3fcd2 ("sched/core: Implement new approach
+to scale select_idle_cpu()").
+
+While there are corner cases where SIS_AVG_CPU is better, it has now been
+disabled for almost three years. As the intent of SIS_PROP is to reduce
+the time complexity of select_idle_cpu(), lets drop SIS_AVG_CPU and focus
+on SIS_PROP as a throttling mechanism.
+
+Signed-off-by: Mel Gorman <mgorman@techsingularity.net>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Vincent Guittot <vincent.guittot@linaro.org>
+Link: https://lkml.kernel.org/r/20210125085909.4600-2-mgorman@techsingularity.net
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/fair.c     | 20 +++++++++-----------
+ kernel/sched/features.h |  1 -
+ 2 files changed, 9 insertions(+), 12 deletions(-)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 9379a481d..124cb6ec6 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -6158,7 +6158,6 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, int t
+ {
+ 	struct cpumask *cpus = this_cpu_cpumask_var_ptr(select_idle_mask);
+ 	struct sched_domain *this_sd;
+-	u64 avg_cost, avg_idle;
+ 	u64 time;
+ 	int this = smp_processor_id();
+ 	int cpu, nr = INT_MAX;
+@@ -6167,18 +6166,17 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, int t
+ 	if (!this_sd)
+ 		return -1;
+ 
+-	/*
+-	 * Due to large variance we need a large fuzz factor; hackbench in
+-	 * particularly is sensitive here.
+-	 */
+-	avg_idle = this_rq()->avg_idle / 512;
+-	avg_cost = this_sd->avg_scan_cost + 1;
++	if (sched_feat(SIS_PROP)) {
++		u64 avg_cost, avg_idle, span_avg;
+ 
+-	if (sched_feat(SIS_AVG_CPU) && avg_idle < avg_cost)
+-		return -1;
++		/*
++		 * Due to large variance we need a large fuzz factor;
++		 * hackbench in particularly is sensitive here.
++		 */
++		avg_idle = this_rq()->avg_idle / 512;
++		avg_cost = this_sd->avg_scan_cost + 1;
+ 
+-	if (sched_feat(SIS_PROP)) {
+-		u64 span_avg = sd->span_weight * avg_idle;
++		span_avg = sd->span_weight * avg_idle;
+ 		if (span_avg > 4*avg_cost)
+ 			nr = div_u64(span_avg, avg_cost);
+ 		else
+diff --git a/kernel/sched/features.h b/kernel/sched/features.h
+index 68d369cba..e875eabb6 100644
+--- a/kernel/sched/features.h
++++ b/kernel/sched/features.h
+@@ -54,7 +54,6 @@ SCHED_FEAT(TTWU_QUEUE, true)
+ /*
+  * When doing wakeups, attempt to limit superfluous scans of the LLC domain.
+  */
+-SCHED_FEAT(SIS_AVG_CPU, false)
+ SCHED_FEAT(SIS_PROP, true)
+ 
+ /*
+-- 
+2.30.0
+
+From bae4ec13640b0915e7dd86da7e65c5d085160571 Mon Sep 17 00:00:00 2001
+From: Mel Gorman <mgorman@techsingularity.net>
+Date: Mon, 25 Jan 2021 08:59:07 +0000
+Subject: [PATCH] sched/fair: Move avg_scan_cost calculations under SIS_PROP
+
+As noted by Vincent Guittot, avg_scan_costs are calculated for SIS_PROP
+even if SIS_PROP is disabled. Move the time calculations under a SIS_PROP
+check and while we are at it, exclude the cost of initialising the CPU
+mask from the average scan cost.
+
+Signed-off-by: Mel Gorman <mgorman@techsingularity.net>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Vincent Guittot <vincent.guittot@linaro.org>
+Link: https://lkml.kernel.org/r/20210125085909.4600-3-mgorman@techsingularity.net
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/fair.c | 14 ++++++++------
+ 1 file changed, 8 insertions(+), 6 deletions(-)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 124cb6ec6..4c18ef6c1 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -6166,6 +6166,8 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, int t
+ 	if (!this_sd)
+ 		return -1;
+ 
++	cpumask_and(cpus, sched_domain_span(sd), p->cpus_ptr);
++
+ 	if (sched_feat(SIS_PROP)) {
+ 		u64 avg_cost, avg_idle, span_avg;
+ 
+@@ -6181,11 +6183,9 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, int t
+ 			nr = div_u64(span_avg, avg_cost);
+ 		else
+ 			nr = 4;
+-	}
+-
+-	time = cpu_clock(this);
+ 
+-	cpumask_and(cpus, sched_domain_span(sd), p->cpus_ptr);
++		time = cpu_clock(this);
++	}
+ 
+ 	for_each_cpu_wrap(cpu, cpus, target) {
+ 		if (!--nr)
+@@ -6194,8 +6194,10 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, int t
+ 			break;
+ 	}
+ 
+-	time = cpu_clock(this) - time;
+-	update_avg(&this_sd->avg_scan_cost, time);
++	if (sched_feat(SIS_PROP)) {
++		time = cpu_clock(this) - time;
++		update_avg(&this_sd->avg_scan_cost, time);
++	}
+ 
+ 	return cpu;
+ }
+-- 
+2.30.0
+
+From dfddf874473f3a38ec99a679692218d97f04040d Mon Sep 17 00:00:00 2001
+From: "Peter Zijlstra (Intel)" <peterz@infradead.org>
+Date: Mon, 25 Jan 2021 08:59:08 +0000
+Subject: [PATCH] sched/fair: Remove select_idle_smt()
+
+In order to make the next patch more readable, and to quantify the
+actual effectiveness of this pass, start by removing it.
+
+Signed-off-by: Mel Gorman <mgorman@techsingularity.net>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Vincent Guittot <vincent.guittot@linaro.org>
+Link: https://lkml.kernel.org/r/20210125085909.4600-4-mgorman@techsingularity.net
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/fair.c | 30 ------------------------------
+ 1 file changed, 30 deletions(-)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 4c18ef6c1..6a0fc8a2d 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -6114,27 +6114,6 @@ static int select_idle_core(struct task_struct *p, struct sched_domain *sd, int
+ 	return -1;
+ }
+ 
+-/*
+- * Scan the local SMT mask for idle CPUs.
+- */
+-static int select_idle_smt(struct task_struct *p, struct sched_domain *sd, int target)
+-{
+-	int cpu;
+-
+-	if (!static_branch_likely(&sched_smt_present))
+-		return -1;
+-
+-	for_each_cpu(cpu, cpu_smt_mask(target)) {
+-		if (!cpumask_test_cpu(cpu, p->cpus_ptr) ||
+-		    !cpumask_test_cpu(cpu, sched_domain_span(sd)))
+-			continue;
+-		if (available_idle_cpu(cpu) || sched_idle_cpu(cpu))
+-			return cpu;
+-	}
+-
+-	return -1;
+-}
+-
+ #else /* CONFIG_SCHED_SMT */
+ 
+ static inline int select_idle_core(struct task_struct *p, struct sched_domain *sd, int target)
+@@ -6142,11 +6121,6 @@ static inline int select_idle_core(struct task_struct *p, struct sched_domain *s
+ 	return -1;
+ }
+ 
+-static inline int select_idle_smt(struct task_struct *p, struct sched_domain *sd, int target)
+-{
+-	return -1;
+-}
+-
+ #endif /* CONFIG_SCHED_SMT */
+ 
+ /*
+@@ -6336,10 +6310,6 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
+ 	if ((unsigned)i < nr_cpumask_bits)
+ 		return i;
+ 
+-	i = select_idle_smt(p, sd, target);
+-	if ((unsigned)i < nr_cpumask_bits)
+-		return i;
+-
+ 	return target;
+ }
+ 
+-- 
+2.30.0
+
+From 6e443d713a929574f7fdaa87f0aa6f1579ba1541 Mon Sep 17 00:00:00 2001
+From: "Peter Zijlstra (Intel)" <peterz@infradead.org>
+Date: Wed, 27 Jan 2021 13:52:03 +0000
+Subject: [PATCH] sched/fair: Merge select_idle_core/cpu()
+
+Both select_idle_core() and select_idle_cpu() do a loop over the same
+cpumask. Observe that by clearing the already visited CPUs, we can
+fold the iteration and iterate a core at a time.
+
+All we need to do is remember any non-idle CPU we encountered while
+scanning for an idle core. This way we'll only iterate every CPU once.
+
+Signed-off-by: Mel Gorman <mgorman@techsingularity.net>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Vincent Guittot <vincent.guittot@linaro.org>
+Link: https://lkml.kernel.org/r/20210127135203.19633-5-mgorman@techsingularity.net
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/fair.c | 99 +++++++++++++++++++++++++++------------------
+ 1 file changed, 59 insertions(+), 40 deletions(-)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 6a0fc8a2d..c73d5883b 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -6019,6 +6019,14 @@ static inline int find_idlest_cpu(struct sched_domain *sd, struct task_struct *p
+ 	return new_cpu;
+ }
+ 
++static inline int __select_idle_cpu(int cpu)
++{
++	if (available_idle_cpu(cpu) || sched_idle_cpu(cpu))
++		return cpu;
++
++	return -1;
++}
++
+ #ifdef CONFIG_SCHED_SMT
+ DEFINE_STATIC_KEY_FALSE(sched_smt_present);
+ EXPORT_SYMBOL_GPL(sched_smt_present);
+@@ -6077,48 +6085,51 @@ void __update_idle_core(struct rq *rq)
+  * there are no idle cores left in the system; tracked through
+  * sd_llc->shared->has_idle_cores and enabled through update_idle_core() above.
+  */
+-static int select_idle_core(struct task_struct *p, struct sched_domain *sd, int target)
++static int select_idle_core(struct task_struct *p, int core, struct cpumask *cpus, int *idle_cpu)
+ {
+-	struct cpumask *cpus = this_cpu_cpumask_var_ptr(select_idle_mask);
+-	int core, cpu;
++	bool idle = true;
++	int cpu;
+ 
+ 	if (!static_branch_likely(&sched_smt_present))
+-		return -1;
+-
+-	if (!test_idle_cores(target, false))
+-		return -1;
+-
+-	cpumask_and(cpus, sched_domain_span(sd), p->cpus_ptr);
++		return __select_idle_cpu(core);
+ 
+-	for_each_cpu_wrap(core, cpus, target) {
+-		bool idle = true;
+-
+-		for_each_cpu(cpu, cpu_smt_mask(core)) {
+-			if (!available_idle_cpu(cpu)) {
+-				idle = false;
+-				break;
++	for_each_cpu(cpu, cpu_smt_mask(core)) {
++		if (!available_idle_cpu(cpu)) {
++			idle = false;
++			if (*idle_cpu == -1) {
++				if (sched_idle_cpu(cpu) && cpumask_test_cpu(cpu, p->cpus_ptr)) {
++					*idle_cpu = cpu;
++					break;
++				}
++				continue;
+ 			}
++			break;
+ 		}
+-
+-		if (idle)
+-			return core;
+-
+-		cpumask_andnot(cpus, cpus, cpu_smt_mask(core));
++		if (*idle_cpu == -1 && cpumask_test_cpu(cpu, p->cpus_ptr))
++			*idle_cpu = cpu;
+ 	}
+ 
+-	/*
+-	 * Failed to find an idle core; stop looking for one.
+-	 */
+-	set_idle_cores(target, 0);
++	if (idle)
++		return core;
+ 
++	cpumask_andnot(cpus, cpus, cpu_smt_mask(core));
+ 	return -1;
+ }
+ 
+ #else /* CONFIG_SCHED_SMT */
+ 
+-static inline int select_idle_core(struct task_struct *p, struct sched_domain *sd, int target)
++static inline void set_idle_cores(int cpu, int val)
+ {
+-	return -1;
++}
++
++static inline bool test_idle_cores(int cpu, bool def)
++{
++	return def;
++}
++
++static inline int select_idle_core(struct task_struct *p, int core, struct cpumask *cpus, int *idle_cpu)
++{
++	return __select_idle_cpu(core);
+ }
+ 
+ #endif /* CONFIG_SCHED_SMT */
+@@ -6131,10 +6142,11 @@ static inline int select_idle_core(struct task_struct *p, struct sched_domain *s
+ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, int target)
+ {
+ 	struct cpumask *cpus = this_cpu_cpumask_var_ptr(select_idle_mask);
++	int i, cpu, idle_cpu = -1, nr = INT_MAX;
++	bool smt = test_idle_cores(target, false);
++	int this = smp_processor_id();
+ 	struct sched_domain *this_sd;
+ 	u64 time;
+-	int this = smp_processor_id();
+-	int cpu, nr = INT_MAX;
+ 
+ 	this_sd = rcu_dereference(*this_cpu_ptr(&sd_llc));
+ 	if (!this_sd)
+@@ -6142,7 +6154,7 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, int t
+ 
+ 	cpumask_and(cpus, sched_domain_span(sd), p->cpus_ptr);
+ 
+-	if (sched_feat(SIS_PROP)) {
++	if (sched_feat(SIS_PROP) && !smt) {
+ 		u64 avg_cost, avg_idle, span_avg;
+ 
+ 		/*
+@@ -6162,18 +6174,29 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, int t
+ 	}
+ 
+ 	for_each_cpu_wrap(cpu, cpus, target) {
+-		if (!--nr)
+-			return -1;
+-		if (available_idle_cpu(cpu) || sched_idle_cpu(cpu))
+-			break;
++		if (smt) {
++			i = select_idle_core(p, cpu, cpus, &idle_cpu);
++			if ((unsigned int)i < nr_cpumask_bits)
++				return i;
++
++		} else {
++			if (!--nr)
++				return -1;
++			idle_cpu = __select_idle_cpu(cpu);
++			if ((unsigned int)idle_cpu < nr_cpumask_bits)
++				break;
++		}
+ 	}
+ 
+-	if (sched_feat(SIS_PROP)) {
++	if (smt)
++		set_idle_cores(this, false);
++
++	if (sched_feat(SIS_PROP) && !smt) {
+ 		time = cpu_clock(this) - time;
+ 		update_avg(&this_sd->avg_scan_cost, time);
+ 	}
+ 
+-	return cpu;
++	return idle_cpu;
+ }
+ 
+ /*
+@@ -6302,10 +6325,6 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
+ 	if (!sd)
+ 		return target;
+ 
+-	i = select_idle_core(p, sd, target);
+-	if ((unsigned)i < nr_cpumask_bits)
+-		return i;
+-
+ 	i = select_idle_cpu(p, sd, target);
+ 	if ((unsigned)i < nr_cpumask_bits)
+ 		return i;
+-- 
+2.30.0
+
+From 6b81cf7f749902251bad76f07293dc564262d4e8 Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Wed, 29 Apr 2020 17:03:22 +0200
+Subject: [PATCH] rbtree: Add generic add and find helpers
+
+I've always been bothered by the endless (fragile) boilerplate for
+rbtree, and I recently wrote some rbtree helpers for objtool and
+figured I should lift them into the kernel and use them more widely.
+
+Provide:
+
+partial-order; less() based:
+ - rb_add(): add a new entry to the rbtree
+ - rb_add_cached(): like rb_add(), but for a rb_root_cached
+
+total-order; cmp() based:
+ - rb_find(): find an entry in an rbtree
+ - rb_find_add(): find an entry, and add if not found
+
+ - rb_find_first(): find the first (leftmost) matching entry
+ - rb_next_match(): continue from rb_find_first()
+ - rb_for_each(): iterate a sub-tree using the previous two
+
+Inlining and constant propagation should see the compiler inline the
+whole thing, including the various compare functions.
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Michel Lespinasse <walken@google.com>
+Acked-by: Davidlohr Bueso <dbueso@suse.de>
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ include/linux/rbtree.h       | 190 ++++++++++++++++++++++++++++++++++
+ tools/include/linux/rbtree.h | 192 ++++++++++++++++++++++++++++++++++-
+ tools/objtool/elf.c          |  73 ++-----------
+ 3 files changed, 392 insertions(+), 63 deletions(-)
+
+diff --git a/include/linux/rbtree.h b/include/linux/rbtree.h
+index d7db17996..e0b300de8 100644
+--- a/include/linux/rbtree.h
++++ b/include/linux/rbtree.h
+@@ -158,4 +158,194 @@ static inline void rb_replace_node_cached(struct rb_node *victim,
+ 	rb_replace_node(victim, new, &root->rb_root);
+ }
+ 
++/*
++ * The below helper functions use 2 operators with 3 different
++ * calling conventions. The operators are related like:
++ *
++ *	comp(a->key,b) < 0  := less(a,b)
++ *	comp(a->key,b) > 0  := less(b,a)
++ *	comp(a->key,b) == 0 := !less(a,b) && !less(b,a)
++ *
++ * If these operators define a partial order on the elements we make no
++ * guarantee on which of the elements matching the key is found. See
++ * rb_find().
++ *
++ * The reason for this is to allow the find() interface without requiring an
++ * on-stack dummy object, which might not be feasible due to object size.
++ */
++
++/**
++ * rb_add_cached() - insert @node into the leftmost cached tree @tree
++ * @node: node to insert
++ * @tree: leftmost cached tree to insert @node into
++ * @less: operator defining the (partial) node order
++ */
++static __always_inline void
++rb_add_cached(struct rb_node *node, struct rb_root_cached *tree,
++	      bool (*less)(struct rb_node *, const struct rb_node *))
++{
++	struct rb_node **link = &tree->rb_root.rb_node;
++	struct rb_node *parent = NULL;
++	bool leftmost = true;
++
++	while (*link) {
++		parent = *link;
++		if (less(node, parent)) {
++			link = &parent->rb_left;
++		} else {
++			link = &parent->rb_right;
++			leftmost = false;
++		}
++	}
++
++	rb_link_node(node, parent, link);
++	rb_insert_color_cached(node, tree, leftmost);
++}
++
++/**
++ * rb_add() - insert @node into @tree
++ * @node: node to insert
++ * @tree: tree to insert @node into
++ * @less: operator defining the (partial) node order
++ */
++static __always_inline void
++rb_add(struct rb_node *node, struct rb_root *tree,
++       bool (*less)(struct rb_node *, const struct rb_node *))
++{
++	struct rb_node **link = &tree->rb_node;
++	struct rb_node *parent = NULL;
++
++	while (*link) {
++		parent = *link;
++		if (less(node, parent))
++			link = &parent->rb_left;
++		else
++			link = &parent->rb_right;
++	}
++
++	rb_link_node(node, parent, link);
++	rb_insert_color(node, tree);
++}
++
++/**
++ * rb_find_add() - find equivalent @node in @tree, or add @node
++ * @node: node to look-for / insert
++ * @tree: tree to search / modify
++ * @cmp: operator defining the node order
++ *
++ * Returns the rb_node matching @node, or NULL when no match is found and @node
++ * is inserted.
++ */
++static __always_inline struct rb_node *
++rb_find_add(struct rb_node *node, struct rb_root *tree,
++	    int (*cmp)(struct rb_node *, const struct rb_node *))
++{
++	struct rb_node **link = &tree->rb_node;
++	struct rb_node *parent = NULL;
++	int c;
++
++	while (*link) {
++		parent = *link;
++		c = cmp(node, parent);
++
++		if (c < 0)
++			link = &parent->rb_left;
++		else if (c > 0)
++			link = &parent->rb_right;
++		else
++			return parent;
++	}
++
++	rb_link_node(node, parent, link);
++	rb_insert_color(node, tree);
++	return NULL;
++}
++
++/**
++ * rb_find() - find @key in tree @tree
++ * @key: key to match
++ * @tree: tree to search
++ * @cmp: operator defining the node order
++ *
++ * Returns the rb_node matching @key or NULL.
++ */
++static __always_inline struct rb_node *
++rb_find(const void *key, const struct rb_root *tree,
++	int (*cmp)(const void *key, const struct rb_node *))
++{
++	struct rb_node *node = tree->rb_node;
++
++	while (node) {
++		int c = cmp(key, node);
++
++		if (c < 0)
++			node = node->rb_left;
++		else if (c > 0)
++			node = node->rb_right;
++		else
++			return node;
++	}
++
++	return NULL;
++}
++
++/**
++ * rb_find_first() - find the first @key in @tree
++ * @key: key to match
++ * @tree: tree to search
++ * @cmp: operator defining node order
++ *
++ * Returns the leftmost node matching @key, or NULL.
++ */
++static __always_inline struct rb_node *
++rb_find_first(const void *key, const struct rb_root *tree,
++	      int (*cmp)(const void *key, const struct rb_node *))
++{
++	struct rb_node *node = tree->rb_node;
++	struct rb_node *match = NULL;
++
++	while (node) {
++		int c = cmp(key, node);
++
++		if (c <= 0) {
++			if (!c)
++				match = node;
++			node = node->rb_left;
++		} else if (c > 0) {
++			node = node->rb_right;
++		}
++	}
++
++	return match;
++}
++
++/**
++ * rb_next_match() - find the next @key in @tree
++ * @key: key to match
++ * @tree: tree to search
++ * @cmp: operator defining node order
++ *
++ * Returns the next node matching @key, or NULL.
++ */
++static __always_inline struct rb_node *
++rb_next_match(const void *key, struct rb_node *node,
++	      int (*cmp)(const void *key, const struct rb_node *))
++{
++	node = rb_next(node);
++	if (node && cmp(key, node))
++		node = NULL;
++	return node;
++}
++
++/**
++ * rb_for_each() - iterates a subtree matching @key
++ * @node: iterator
++ * @key: key to match
++ * @tree: tree to search
++ * @cmp: operator defining node order
++ */
++#define rb_for_each(node, key, tree, cmp) \
++	for ((node) = rb_find_first((key), (tree), (cmp)); \
++	     (node); (node) = rb_next_match((key), (node), (cmp)))
++
+ #endif	/* _LINUX_RBTREE_H */
+diff --git a/tools/include/linux/rbtree.h b/tools/include/linux/rbtree.h
+index 30dd21f97..2680f2edb 100644
+--- a/tools/include/linux/rbtree.h
++++ b/tools/include/linux/rbtree.h
+@@ -152,4 +152,194 @@ static inline void rb_replace_node_cached(struct rb_node *victim,
+ 	rb_replace_node(victim, new, &root->rb_root);
+ }
+ 
+-#endif /* __TOOLS_LINUX_PERF_RBTREE_H */
++/*
++ * The below helper functions use 2 operators with 3 different
++ * calling conventions. The operators are related like:
++ *
++ *	comp(a->key,b) < 0  := less(a,b)
++ *	comp(a->key,b) > 0  := less(b,a)
++ *	comp(a->key,b) == 0 := !less(a,b) && !less(b,a)
++ *
++ * If these operators define a partial order on the elements we make no
++ * guarantee on which of the elements matching the key is found. See
++ * rb_find().
++ *
++ * The reason for this is to allow the find() interface without requiring an
++ * on-stack dummy object, which might not be feasible due to object size.
++ */
++
++/**
++ * rb_add_cached() - insert @node into the leftmost cached tree @tree
++ * @node: node to insert
++ * @tree: leftmost cached tree to insert @node into
++ * @less: operator defining the (partial) node order
++ */
++static __always_inline void
++rb_add_cached(struct rb_node *node, struct rb_root_cached *tree,
++	      bool (*less)(struct rb_node *, const struct rb_node *))
++{
++	struct rb_node **link = &tree->rb_root.rb_node;
++	struct rb_node *parent = NULL;
++	bool leftmost = true;
++
++	while (*link) {
++		parent = *link;
++		if (less(node, parent)) {
++			link = &parent->rb_left;
++		} else {
++			link = &parent->rb_right;
++			leftmost = false;
++		}
++	}
++
++	rb_link_node(node, parent, link);
++	rb_insert_color_cached(node, tree, leftmost);
++}
++
++/**
++ * rb_add() - insert @node into @tree
++ * @node: node to insert
++ * @tree: tree to insert @node into
++ * @less: operator defining the (partial) node order
++ */
++static __always_inline void
++rb_add(struct rb_node *node, struct rb_root *tree,
++       bool (*less)(struct rb_node *, const struct rb_node *))
++{
++	struct rb_node **link = &tree->rb_node;
++	struct rb_node *parent = NULL;
++
++	while (*link) {
++		parent = *link;
++		if (less(node, parent))
++			link = &parent->rb_left;
++		else
++			link = &parent->rb_right;
++	}
++
++	rb_link_node(node, parent, link);
++	rb_insert_color(node, tree);
++}
++
++/**
++ * rb_find_add() - find equivalent @node in @tree, or add @node
++ * @node: node to look-for / insert
++ * @tree: tree to search / modify
++ * @cmp: operator defining the node order
++ *
++ * Returns the rb_node matching @node, or NULL when no match is found and @node
++ * is inserted.
++ */
++static __always_inline struct rb_node *
++rb_find_add(struct rb_node *node, struct rb_root *tree,
++	    int (*cmp)(struct rb_node *, const struct rb_node *))
++{
++	struct rb_node **link = &tree->rb_node;
++	struct rb_node *parent = NULL;
++	int c;
++
++	while (*link) {
++		parent = *link;
++		c = cmp(node, parent);
++
++		if (c < 0)
++			link = &parent->rb_left;
++		else if (c > 0)
++			link = &parent->rb_right;
++		else
++			return parent;
++	}
++
++	rb_link_node(node, parent, link);
++	rb_insert_color(node, tree);
++	return NULL;
++}
++
++/**
++ * rb_find() - find @key in tree @tree
++ * @key: key to match
++ * @tree: tree to search
++ * @cmp: operator defining the node order
++ *
++ * Returns the rb_node matching @key or NULL.
++ */
++static __always_inline struct rb_node *
++rb_find(const void *key, const struct rb_root *tree,
++	int (*cmp)(const void *key, const struct rb_node *))
++{
++	struct rb_node *node = tree->rb_node;
++
++	while (node) {
++		int c = cmp(key, node);
++
++		if (c < 0)
++			node = node->rb_left;
++		else if (c > 0)
++			node = node->rb_right;
++		else
++			return node;
++	}
++
++	return NULL;
++}
++
++/**
++ * rb_find_first() - find the first @key in @tree
++ * @key: key to match
++ * @tree: tree to search
++ * @cmp: operator defining node order
++ *
++ * Returns the leftmost node matching @key, or NULL.
++ */
++static __always_inline struct rb_node *
++rb_find_first(const void *key, const struct rb_root *tree,
++	      int (*cmp)(const void *key, const struct rb_node *))
++{
++	struct rb_node *node = tree->rb_node;
++	struct rb_node *match = NULL;
++
++	while (node) {
++		int c = cmp(key, node);
++
++		if (c <= 0) {
++			if (!c)
++				match = node;
++			node = node->rb_left;
++		} else if (c > 0) {
++			node = node->rb_right;
++		}
++	}
++
++	return match;
++}
++
++/**
++ * rb_next_match() - find the next @key in @tree
++ * @key: key to match
++ * @tree: tree to search
++ * @cmp: operator defining node order
++ *
++ * Returns the next node matching @key, or NULL.
++ */
++static __always_inline struct rb_node *
++rb_next_match(const void *key, struct rb_node *node,
++	      int (*cmp)(const void *key, const struct rb_node *))
++{
++	node = rb_next(node);
++	if (node && cmp(key, node))
++		node = NULL;
++	return node;
++}
++
++/**
++ * rb_for_each() - iterates a subtree matching @key
++ * @node: iterator
++ * @key: key to match
++ * @tree: tree to search
++ * @cmp: operator defining node order
++ */
++#define rb_for_each(node, key, tree, cmp) \
++	for ((node) = rb_find_first((key), (tree), (cmp)); \
++	     (node); (node) = rb_next_match((key), (node), (cmp)))
++
++#endif	/* __TOOLS_LINUX_PERF_RBTREE_H */
+diff --git a/tools/objtool/elf.c b/tools/objtool/elf.c
+index be89c741b..24d8a05e5 100644
+--- a/tools/objtool/elf.c
++++ b/tools/objtool/elf.c
+@@ -43,75 +43,24 @@ static void elf_hash_init(struct hlist_head *table)
+ #define elf_hash_for_each_possible(name, obj, member, key)			\
+ 	hlist_for_each_entry(obj, &name[hash_min(key, elf_hash_bits())], member)
+ 
+-static void rb_add(struct rb_root *tree, struct rb_node *node,
+-		   int (*cmp)(struct rb_node *, const struct rb_node *))
+-{
+-	struct rb_node **link = &tree->rb_node;
+-	struct rb_node *parent = NULL;
+-
+-	while (*link) {
+-		parent = *link;
+-		if (cmp(node, parent) < 0)
+-			link = &parent->rb_left;
+-		else
+-			link = &parent->rb_right;
+-	}
+-
+-	rb_link_node(node, parent, link);
+-	rb_insert_color(node, tree);
+-}
+-
+-static struct rb_node *rb_find_first(const struct rb_root *tree, const void *key,
+-			       int (*cmp)(const void *key, const struct rb_node *))
+-{
+-	struct rb_node *node = tree->rb_node;
+-	struct rb_node *match = NULL;
+-
+-	while (node) {
+-		int c = cmp(key, node);
+-		if (c <= 0) {
+-			if (!c)
+-				match = node;
+-			node = node->rb_left;
+-		} else if (c > 0) {
+-			node = node->rb_right;
+-		}
+-	}
+-
+-	return match;
+-}
+-
+-static struct rb_node *rb_next_match(struct rb_node *node, const void *key,
+-				    int (*cmp)(const void *key, const struct rb_node *))
+-{
+-	node = rb_next(node);
+-	if (node && cmp(key, node))
+-		node = NULL;
+-	return node;
+-}
+-
+-#define rb_for_each(tree, node, key, cmp) \
+-	for ((node) = rb_find_first((tree), (key), (cmp)); \
+-	     (node); (node) = rb_next_match((node), (key), (cmp)))
+-
+-static int symbol_to_offset(struct rb_node *a, const struct rb_node *b)
++static bool symbol_to_offset(struct rb_node *a, const struct rb_node *b)
+ {
+ 	struct symbol *sa = rb_entry(a, struct symbol, node);
+ 	struct symbol *sb = rb_entry(b, struct symbol, node);
+ 
+ 	if (sa->offset < sb->offset)
+-		return -1;
++		return true;
+ 	if (sa->offset > sb->offset)
+-		return 1;
++		return false;
+ 
+ 	if (sa->len < sb->len)
+-		return -1;
++		return true;
+ 	if (sa->len > sb->len)
+-		return 1;
++		return false;
+ 
+ 	sa->alias = sb;
+ 
+-	return 0;
++	return false;
+ }
+ 
+ static int symbol_by_offset(const void *key, const struct rb_node *node)
+@@ -165,7 +114,7 @@ struct symbol *find_symbol_by_offset(struct section *sec, unsigned long offset)
+ {
+ 	struct rb_node *node;
+ 
+-	rb_for_each(&sec->symbol_tree, node, &offset, symbol_by_offset) {
++	rb_for_each(node, &offset, &sec->symbol_tree, symbol_by_offset) {
+ 		struct symbol *s = rb_entry(node, struct symbol, node);
+ 
+ 		if (s->offset == offset && s->type != STT_SECTION)
+@@ -179,7 +128,7 @@ struct symbol *find_func_by_offset(struct section *sec, unsigned long offset)
+ {
+ 	struct rb_node *node;
+ 
+-	rb_for_each(&sec->symbol_tree, node, &offset, symbol_by_offset) {
++	rb_for_each(node, &offset, &sec->symbol_tree, symbol_by_offset) {
+ 		struct symbol *s = rb_entry(node, struct symbol, node);
+ 
+ 		if (s->offset == offset && s->type == STT_FUNC)
+@@ -193,7 +142,7 @@ struct symbol *find_symbol_containing(const struct section *sec, unsigned long o
+ {
+ 	struct rb_node *node;
+ 
+-	rb_for_each(&sec->symbol_tree, node, &offset, symbol_by_offset) {
++	rb_for_each(node, &offset, &sec->symbol_tree, symbol_by_offset) {
+ 		struct symbol *s = rb_entry(node, struct symbol, node);
+ 
+ 		if (s->type != STT_SECTION)
+@@ -207,7 +156,7 @@ struct symbol *find_func_containing(struct section *sec, unsigned long offset)
+ {
+ 	struct rb_node *node;
+ 
+-	rb_for_each(&sec->symbol_tree, node, &offset, symbol_by_offset) {
++	rb_for_each(node, &offset, &sec->symbol_tree, symbol_by_offset) {
+ 		struct symbol *s = rb_entry(node, struct symbol, node);
+ 
+ 		if (s->type == STT_FUNC)
+@@ -439,7 +388,7 @@ static int read_symbols(struct elf *elf)
+ 		sym->offset = sym->sym.st_value;
+ 		sym->len = sym->sym.st_size;
+ 
+-		rb_add(&sym->sec->symbol_tree, &sym->node, symbol_to_offset);
++		rb_add(&sym->node, &sym->sec->symbol_tree, symbol_to_offset);
+ 		pnode = rb_prev(&sym->node);
+ 		if (pnode)
+ 			entry = &rb_entry(pnode, struct symbol, node)->list;
+-- 
+2.30.0
+
+From 845abbf92fb4838882a29748cb64894cf2846f64 Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Wed, 29 Apr 2020 17:04:12 +0200
+Subject: [PATCH] rbtree, sched/fair: Use rb_add_cached()
+
+Reduce rbtree boiler plate by using the new helper function.
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Acked-by: Davidlohr Bueso <dbueso@suse.de>
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/fair.c | 46 ++++++++++++++-------------------------------
+ 1 file changed, 14 insertions(+), 32 deletions(-)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index c73d5883b..59b645e3c 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -531,12 +531,15 @@ static inline u64 min_vruntime(u64 min_vruntime, u64 vruntime)
+ 	return min_vruntime;
+ }
+ 
+-static inline int entity_before(struct sched_entity *a,
++static inline bool entity_before(struct sched_entity *a,
+ 				struct sched_entity *b)
+ {
+ 	return (s64)(a->vruntime - b->vruntime) < 0;
+ }
+ 
++#define __node_2_se(node) \
++	rb_entry((node), struct sched_entity, run_node)
++
+ static void update_min_vruntime(struct cfs_rq *cfs_rq)
+ {
+ 	struct sched_entity *curr = cfs_rq->curr;
+@@ -552,8 +555,7 @@ static void update_min_vruntime(struct cfs_rq *cfs_rq)
+ 	}
+ 
+ 	if (leftmost) { /* non-empty tree */
+-		struct sched_entity *se;
+-		se = rb_entry(leftmost, struct sched_entity, run_node);
++		struct sched_entity *se = __node_2_se(leftmost);
+ 
+ 		if (!curr)
+ 			vruntime = se->vruntime;
+@@ -569,37 +571,17 @@ static void update_min_vruntime(struct cfs_rq *cfs_rq)
+ #endif
+ }
+ 
++static inline bool __entity_less(struct rb_node *a, const struct rb_node *b)
++{
++	return entity_before(__node_2_se(a), __node_2_se(b));
++}
++
+ /*
+  * Enqueue an entity into the rb-tree:
+  */
+ static void __enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
+ {
+-	struct rb_node **link = &cfs_rq->tasks_timeline.rb_root.rb_node;
+-	struct rb_node *parent = NULL;
+-	struct sched_entity *entry;
+-	bool leftmost = true;
+-
+-	/*
+-	 * Find the right place in the rbtree:
+-	 */
+-	while (*link) {
+-		parent = *link;
+-		entry = rb_entry(parent, struct sched_entity, run_node);
+-		/*
+-		 * We dont care about collisions. Nodes with
+-		 * the same key stay together.
+-		 */
+-		if (entity_before(se, entry)) {
+-			link = &parent->rb_left;
+-		} else {
+-			link = &parent->rb_right;
+-			leftmost = false;
+-		}
+-	}
+-
+-	rb_link_node(&se->run_node, parent, link);
+-	rb_insert_color_cached(&se->run_node,
+-			       &cfs_rq->tasks_timeline, leftmost);
++	rb_add_cached(&se->run_node, &cfs_rq->tasks_timeline, __entity_less);
+ }
+ 
+ static void __dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
+@@ -614,7 +596,7 @@ struct sched_entity *__pick_first_entity(struct cfs_rq *cfs_rq)
+ 	if (!left)
+ 		return NULL;
+ 
+-	return rb_entry(left, struct sched_entity, run_node);
++	return __node_2_se(left);
+ }
+ 
+ static struct sched_entity *__pick_next_entity(struct sched_entity *se)
+@@ -624,7 +606,7 @@ static struct sched_entity *__pick_next_entity(struct sched_entity *se)
+ 	if (!next)
+ 		return NULL;
+ 
+-	return rb_entry(next, struct sched_entity, run_node);
++	return __node_2_se(next);
+ }
+ 
+ #ifdef CONFIG_SCHED_DEBUG
+@@ -635,7 +617,7 @@ struct sched_entity *__pick_last_entity(struct cfs_rq *cfs_rq)
+ 	if (!last)
+ 		return NULL;
+ 
+-	return rb_entry(last, struct sched_entity, run_node);
++	return __node_2_se(last);
+ }
+ 
+ /**************************************************************
+-- 
+2.30.0
+
+From e656380e35e3c31199c1d4e4a441b770eb572ac4 Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Wed, 29 Apr 2020 17:04:41 +0200
+Subject: [PATCH] rbtree, sched/deadline: Use rb_add_cached()
+
+Reduce rbtree boiler plate by using the new helpers.
+
+Make rb_add_cached() / rb_erase_cached() return a pointer to the
+leftmost node to aid in updating additional state.
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Acked-by: Davidlohr Bueso <dbueso@suse.de>
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ include/linux/rbtree.h  | 18 +++++++---
+ kernel/sched/deadline.c | 77 +++++++++++++++--------------------------
+ 2 files changed, 42 insertions(+), 53 deletions(-)
+
+diff --git a/include/linux/rbtree.h b/include/linux/rbtree.h
+index e0b300de8..d31ecaf4f 100644
+--- a/include/linux/rbtree.h
++++ b/include/linux/rbtree.h
+@@ -141,12 +141,18 @@ static inline void rb_insert_color_cached(struct rb_node *node,
+ 	rb_insert_color(node, &root->rb_root);
+ }
+ 
+-static inline void rb_erase_cached(struct rb_node *node,
+-				   struct rb_root_cached *root)
++
++static inline struct rb_node *
++rb_erase_cached(struct rb_node *node, struct rb_root_cached *root)
+ {
++	struct rb_node *leftmost = NULL;
++
+ 	if (root->rb_leftmost == node)
+-		root->rb_leftmost = rb_next(node);
++		leftmost = root->rb_leftmost = rb_next(node);
++
+ 	rb_erase(node, &root->rb_root);
++
++	return leftmost;
+ }
+ 
+ static inline void rb_replace_node_cached(struct rb_node *victim,
+@@ -179,8 +185,10 @@ static inline void rb_replace_node_cached(struct rb_node *victim,
+  * @node: node to insert
+  * @tree: leftmost cached tree to insert @node into
+  * @less: operator defining the (partial) node order
++ *
++ * Returns @node when it is the new leftmost, or NULL.
+  */
+-static __always_inline void
++static __always_inline struct rb_node *
+ rb_add_cached(struct rb_node *node, struct rb_root_cached *tree,
+ 	      bool (*less)(struct rb_node *, const struct rb_node *))
+ {
+@@ -200,6 +208,8 @@ rb_add_cached(struct rb_node *node, struct rb_root_cached *tree,
+ 
+ 	rb_link_node(node, parent, link);
+ 	rb_insert_color_cached(node, tree, leftmost);
++
++	return leftmost ? node : NULL;
+ }
+ 
+ /**
+diff --git a/kernel/sched/deadline.c b/kernel/sched/deadline.c
+index 5421782fe..1508d126e 100644
+--- a/kernel/sched/deadline.c
++++ b/kernel/sched/deadline.c
+@@ -517,58 +517,44 @@ static void dec_dl_migration(struct sched_dl_entity *dl_se, struct dl_rq *dl_rq)
+ 	update_dl_migration(dl_rq);
+ }
+ 
++#define __node_2_pdl(node) \
++	rb_entry((node), struct task_struct, pushable_dl_tasks)
++
++static inline bool __pushable_less(struct rb_node *a, const struct rb_node *b)
++{
++	return dl_entity_preempt(&__node_2_pdl(a)->dl, &__node_2_pdl(b)->dl);
++}
++
+ /*
+  * The list of pushable -deadline task is not a plist, like in
+  * sched_rt.c, it is an rb-tree with tasks ordered by deadline.
+  */
+ static void enqueue_pushable_dl_task(struct rq *rq, struct task_struct *p)
+ {
+-	struct dl_rq *dl_rq = &rq->dl;
+-	struct rb_node **link = &dl_rq->pushable_dl_tasks_root.rb_root.rb_node;
+-	struct rb_node *parent = NULL;
+-	struct task_struct *entry;
+-	bool leftmost = true;
++	struct rb_node *leftmost;
+ 
+ 	BUG_ON(!RB_EMPTY_NODE(&p->pushable_dl_tasks));
+ 
+-	while (*link) {
+-		parent = *link;
+-		entry = rb_entry(parent, struct task_struct,
+-				 pushable_dl_tasks);
+-		if (dl_entity_preempt(&p->dl, &entry->dl))
+-			link = &parent->rb_left;
+-		else {
+-			link = &parent->rb_right;
+-			leftmost = false;
+-		}
+-	}
+-
++	leftmost = rb_add_cached(&p->pushable_dl_tasks,
++				 &rq->dl.pushable_dl_tasks_root,
++				 __pushable_less);
+ 	if (leftmost)
+-		dl_rq->earliest_dl.next = p->dl.deadline;
+-
+-	rb_link_node(&p->pushable_dl_tasks, parent, link);
+-	rb_insert_color_cached(&p->pushable_dl_tasks,
+-			       &dl_rq->pushable_dl_tasks_root, leftmost);
++		rq->dl.earliest_dl.next = p->dl.deadline;
+ }
+ 
+ static void dequeue_pushable_dl_task(struct rq *rq, struct task_struct *p)
+ {
+ 	struct dl_rq *dl_rq = &rq->dl;
++	struct rb_root_cached *root = &dl_rq->pushable_dl_tasks_root;
++	struct rb_node *leftmost;
+ 
+ 	if (RB_EMPTY_NODE(&p->pushable_dl_tasks))
+ 		return;
+ 
+-	if (dl_rq->pushable_dl_tasks_root.rb_leftmost == &p->pushable_dl_tasks) {
+-		struct rb_node *next_node;
+-
+-		next_node = rb_next(&p->pushable_dl_tasks);
+-		if (next_node) {
+-			dl_rq->earliest_dl.next = rb_entry(next_node,
+-				struct task_struct, pushable_dl_tasks)->dl.deadline;
+-		}
+-	}
++	leftmost = rb_erase_cached(&p->pushable_dl_tasks, root);
++	if (leftmost)
++		dl_rq->earliest_dl.next = __node_2_pdl(leftmost)->dl.deadline;
+ 
+-	rb_erase_cached(&p->pushable_dl_tasks, &dl_rq->pushable_dl_tasks_root);
+ 	RB_CLEAR_NODE(&p->pushable_dl_tasks);
+ }
+ 
+@@ -1478,29 +1464,21 @@ void dec_dl_tasks(struct sched_dl_entity *dl_se, struct dl_rq *dl_rq)
+ 	dec_dl_migration(dl_se, dl_rq);
+ }
+ 
++#define __node_2_dle(node) \
++	rb_entry((node), struct sched_dl_entity, rb_node)
++
++static inline bool __dl_less(struct rb_node *a, const struct rb_node *b)
++{
++	return dl_time_before(__node_2_dle(a)->deadline, __node_2_dle(b)->deadline);
++}
++
+ static void __enqueue_dl_entity(struct sched_dl_entity *dl_se)
+ {
+ 	struct dl_rq *dl_rq = dl_rq_of_se(dl_se);
+-	struct rb_node **link = &dl_rq->root.rb_root.rb_node;
+-	struct rb_node *parent = NULL;
+-	struct sched_dl_entity *entry;
+-	int leftmost = 1;
+ 
+ 	BUG_ON(!RB_EMPTY_NODE(&dl_se->rb_node));
+ 
+-	while (*link) {
+-		parent = *link;
+-		entry = rb_entry(parent, struct sched_dl_entity, rb_node);
+-		if (dl_time_before(dl_se->deadline, entry->deadline))
+-			link = &parent->rb_left;
+-		else {
+-			link = &parent->rb_right;
+-			leftmost = 0;
+-		}
+-	}
+-
+-	rb_link_node(&dl_se->rb_node, parent, link);
+-	rb_insert_color_cached(&dl_se->rb_node, &dl_rq->root, leftmost);
++	rb_add_cached(&dl_se->rb_node, &dl_rq->root, __dl_less);
+ 
+ 	inc_dl_tasks(dl_se, dl_rq);
+ }
+@@ -1513,6 +1491,7 @@ static void __dequeue_dl_entity(struct sched_dl_entity *dl_se)
+ 		return;
+ 
+ 	rb_erase_cached(&dl_se->rb_node, &dl_rq->root);
++
+ 	RB_CLEAR_NODE(&dl_se->rb_node);
+ 
+ 	dec_dl_tasks(dl_se, dl_rq);
+-- 
+2.30.0
+
+From f83454d12d231b5449bb448ff72a9877f8caf591 Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Wed, 29 Apr 2020 17:05:15 +0200
+Subject: [PATCH] rbtree, perf: Use new rbtree helpers
+
+Reduce rbtree boiler plate by using the new helpers.
+
+One noteworthy change is unification of the various (partial) compare
+functions. We construct a subtree match by forcing the sub-order to
+always match, see __group_cmp().
+
+Due to 'const' we had to touch cgroup_id().
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Acked-by: Tejun Heo <tj@kernel.org>
+Acked-by: Davidlohr Bueso <dbueso@suse.de>
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ include/linux/cgroup.h |   4 +-
+ kernel/events/core.c   | 195 +++++++++++++++++++----------------------
+ 2 files changed, 92 insertions(+), 107 deletions(-)
+
+diff --git a/include/linux/cgroup.h b/include/linux/cgroup.h
+index 451c2d26a..4f2f79de0 100644
+--- a/include/linux/cgroup.h
++++ b/include/linux/cgroup.h
+@@ -307,7 +307,7 @@ void css_task_iter_end(struct css_task_iter *it);
+  * Inline functions.
+  */
+ 
+-static inline u64 cgroup_id(struct cgroup *cgrp)
++static inline u64 cgroup_id(const struct cgroup *cgrp)
+ {
+ 	return cgrp->kn->id;
+ }
+@@ -701,7 +701,7 @@ void cgroup_path_from_kernfs_id(u64 id, char *buf, size_t buflen);
+ struct cgroup_subsys_state;
+ struct cgroup;
+ 
+-static inline u64 cgroup_id(struct cgroup *cgrp) { return 1; }
++static inline u64 cgroup_id(const struct cgroup *cgrp) { return 1; }
+ static inline void css_get(struct cgroup_subsys_state *css) {}
+ static inline void css_put(struct cgroup_subsys_state *css) {}
+ static inline int cgroup_attach_task_all(struct task_struct *from,
+diff --git a/kernel/events/core.c b/kernel/events/core.c
+index 55d18791a..3d890961f 100644
+--- a/kernel/events/core.c
++++ b/kernel/events/core.c
+@@ -1595,50 +1595,91 @@ static void perf_event_groups_init(struct perf_event_groups *groups)
+ 	groups->index = 0;
+ }
+ 
++static inline struct cgroup *event_cgroup(const struct perf_event *event)
++{
++	struct cgroup *cgroup = NULL;
++
++#ifdef CONFIG_CGROUP_PERF
++	if (event->cgrp)
++		cgroup = event->cgrp->css.cgroup;
++#endif
++
++	return cgroup;
++}
++
+ /*
+  * Compare function for event groups;
+  *
+  * Implements complex key that first sorts by CPU and then by virtual index
+  * which provides ordering when rotating groups for the same CPU.
+  */
+-static bool
+-perf_event_groups_less(struct perf_event *left, struct perf_event *right)
++static __always_inline int
++perf_event_groups_cmp(const int left_cpu, const struct cgroup *left_cgroup,
++		      const u64 left_group_index, const struct perf_event *right)
+ {
+-	if (left->cpu < right->cpu)
+-		return true;
+-	if (left->cpu > right->cpu)
+-		return false;
++	if (left_cpu < right->cpu)
++		return -1;
++	if (left_cpu > right->cpu)
++		return 1;
+ 
+ #ifdef CONFIG_CGROUP_PERF
+-	if (left->cgrp != right->cgrp) {
+-		if (!left->cgrp || !left->cgrp->css.cgroup) {
+-			/*
+-			 * Left has no cgroup but right does, no cgroups come
+-			 * first.
+-			 */
+-			return true;
+-		}
+-		if (!right->cgrp || !right->cgrp->css.cgroup) {
+-			/*
+-			 * Right has no cgroup but left does, no cgroups come
+-			 * first.
+-			 */
+-			return false;
+-		}
+-		/* Two dissimilar cgroups, order by id. */
+-		if (left->cgrp->css.cgroup->kn->id < right->cgrp->css.cgroup->kn->id)
+-			return true;
++	{
++		const struct cgroup *right_cgroup = event_cgroup(right);
+ 
+-		return false;
++		if (left_cgroup != right_cgroup) {
++			if (!left_cgroup) {
++				/*
++				 * Left has no cgroup but right does, no
++				 * cgroups come first.
++				 */
++				return -1;
++			}
++			if (!right_cgroup) {
++				/*
++				 * Right has no cgroup but left does, no
++				 * cgroups come first.
++				 */
++				return 1;
++			}
++			/* Two dissimilar cgroups, order by id. */
++			if (cgroup_id(left_cgroup) < cgroup_id(right_cgroup))
++				return -1;
++
++			return 1;
++		}
+ 	}
+ #endif
+ 
+-	if (left->group_index < right->group_index)
+-		return true;
+-	if (left->group_index > right->group_index)
+-		return false;
++	if (left_group_index < right->group_index)
++		return -1;
++	if (left_group_index > right->group_index)
++		return 1;
+ 
+-	return false;
++	return 0;
++}
++
++#define __node_2_pe(node) \
++	rb_entry((node), struct perf_event, group_node)
++
++static inline bool __group_less(struct rb_node *a, const struct rb_node *b)
++{
++	struct perf_event *e = __node_2_pe(a);
++	return perf_event_groups_cmp(e->cpu, event_cgroup(e), e->group_index,
++				     __node_2_pe(b)) < 0;
++}
++
++struct __group_key {
++	int cpu;
++	struct cgroup *cgroup;
++};
++
++static inline int __group_cmp(const void *key, const struct rb_node *node)
++{
++	const struct __group_key *a = key;
++	const struct perf_event *b = __node_2_pe(node);
++
++	/* partial/subtree match: @cpu, @cgroup; ignore: @group_index */
++	return perf_event_groups_cmp(a->cpu, a->cgroup, b->group_index, b);
+ }
+ 
+ /*
+@@ -1650,27 +1691,9 @@ static void
+ perf_event_groups_insert(struct perf_event_groups *groups,
+ 			 struct perf_event *event)
+ {
+-	struct perf_event *node_event;
+-	struct rb_node *parent;
+-	struct rb_node **node;
+-
+ 	event->group_index = ++groups->index;
+ 
+-	node = &groups->tree.rb_node;
+-	parent = *node;
+-
+-	while (*node) {
+-		parent = *node;
+-		node_event = container_of(*node, struct perf_event, group_node);
+-
+-		if (perf_event_groups_less(event, node_event))
+-			node = &parent->rb_left;
+-		else
+-			node = &parent->rb_right;
+-	}
+-
+-	rb_link_node(&event->group_node, parent, node);
+-	rb_insert_color(&event->group_node, &groups->tree);
++	rb_add(&event->group_node, &groups->tree, __group_less);
+ }
+ 
+ /*
+@@ -1718,45 +1741,17 @@ static struct perf_event *
+ perf_event_groups_first(struct perf_event_groups *groups, int cpu,
+ 			struct cgroup *cgrp)
+ {
+-	struct perf_event *node_event = NULL, *match = NULL;
+-	struct rb_node *node = groups->tree.rb_node;
+-#ifdef CONFIG_CGROUP_PERF
+-	u64 node_cgrp_id, cgrp_id = 0;
+-
+-	if (cgrp)
+-		cgrp_id = cgrp->kn->id;
+-#endif
+-
+-	while (node) {
+-		node_event = container_of(node, struct perf_event, group_node);
+-
+-		if (cpu < node_event->cpu) {
+-			node = node->rb_left;
+-			continue;
+-		}
+-		if (cpu > node_event->cpu) {
+-			node = node->rb_right;
+-			continue;
+-		}
+-#ifdef CONFIG_CGROUP_PERF
+-		node_cgrp_id = 0;
+-		if (node_event->cgrp && node_event->cgrp->css.cgroup)
+-			node_cgrp_id = node_event->cgrp->css.cgroup->kn->id;
++	struct __group_key key = {
++		.cpu = cpu,
++		.cgroup = cgrp,
++	};
++	struct rb_node *node;
+ 
+-		if (cgrp_id < node_cgrp_id) {
+-			node = node->rb_left;
+-			continue;
+-		}
+-		if (cgrp_id > node_cgrp_id) {
+-			node = node->rb_right;
+-			continue;
+-		}
+-#endif
+-		match = node_event;
+-		node = node->rb_left;
+-	}
++	node = rb_find_first(&key, &groups->tree, __group_cmp);
++	if (node)
++		return __node_2_pe(node);
+ 
+-	return match;
++	return NULL;
+ }
+ 
+ /*
+@@ -1765,27 +1760,17 @@ perf_event_groups_first(struct perf_event_groups *groups, int cpu,
+ static struct perf_event *
+ perf_event_groups_next(struct perf_event *event)
+ {
+-	struct perf_event *next;
+-#ifdef CONFIG_CGROUP_PERF
+-	u64 curr_cgrp_id = 0;
+-	u64 next_cgrp_id = 0;
+-#endif
+-
+-	next = rb_entry_safe(rb_next(&event->group_node), typeof(*event), group_node);
+-	if (next == NULL || next->cpu != event->cpu)
+-		return NULL;
+-
+-#ifdef CONFIG_CGROUP_PERF
+-	if (event->cgrp && event->cgrp->css.cgroup)
+-		curr_cgrp_id = event->cgrp->css.cgroup->kn->id;
++	struct __group_key key = {
++		.cpu = event->cpu,
++		.cgroup = event_cgroup(event),
++	};
++	struct rb_node *next;
+ 
+-	if (next->cgrp && next->cgrp->css.cgroup)
+-		next_cgrp_id = next->cgrp->css.cgroup->kn->id;
++	next = rb_next_match(&key, &event->group_node, __group_cmp);
++	if (next)
++		return __node_2_pe(next);
+ 
+-	if (curr_cgrp_id != next_cgrp_id)
+-		return NULL;
+-#endif
+-	return next;
++	return NULL;
+ }
+ 
+ /*
+-- 
+2.30.0
+
+From c6bc9bd06dff49fa4c5d715af2e95b834a28ff00 Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Wed, 29 Apr 2020 17:06:27 +0200
+Subject: [PATCH] rbtree, uprobes: Use rbtree helpers
+
+Reduce rbtree boilerplate by using the new helpers.
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Acked-by: Davidlohr Bueso <dbueso@suse.de>
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/events/uprobes.c | 80 ++++++++++++++++++++---------------------
+ 1 file changed, 39 insertions(+), 41 deletions(-)
+
+diff --git a/kernel/events/uprobes.c b/kernel/events/uprobes.c
+index bf9edd8d7..fd5160dee 100644
+--- a/kernel/events/uprobes.c
++++ b/kernel/events/uprobes.c
+@@ -613,41 +613,56 @@ static void put_uprobe(struct uprobe *uprobe)
+ 	}
+ }
+ 
+-static int match_uprobe(struct uprobe *l, struct uprobe *r)
++static __always_inline
++int uprobe_cmp(const struct inode *l_inode, const loff_t l_offset,
++	       const struct uprobe *r)
+ {
+-	if (l->inode < r->inode)
++	if (l_inode < r->inode)
+ 		return -1;
+ 
+-	if (l->inode > r->inode)
++	if (l_inode > r->inode)
+ 		return 1;
+ 
+-	if (l->offset < r->offset)
++	if (l_offset < r->offset)
+ 		return -1;
+ 
+-	if (l->offset > r->offset)
++	if (l_offset > r->offset)
+ 		return 1;
+ 
+ 	return 0;
+ }
+ 
++#define __node_2_uprobe(node) \
++	rb_entry((node), struct uprobe, rb_node)
++
++struct __uprobe_key {
++	struct inode *inode;
++	loff_t offset;
++};
++
++static inline int __uprobe_cmp_key(const void *key, const struct rb_node *b)
++{
++	const struct __uprobe_key *a = key;
++	return uprobe_cmp(a->inode, a->offset, __node_2_uprobe(b));
++}
++
++static inline int __uprobe_cmp(struct rb_node *a, const struct rb_node *b)
++{
++	struct uprobe *u = __node_2_uprobe(a);
++	return uprobe_cmp(u->inode, u->offset, __node_2_uprobe(b));
++}
++
+ static struct uprobe *__find_uprobe(struct inode *inode, loff_t offset)
+ {
+-	struct uprobe u = { .inode = inode, .offset = offset };
+-	struct rb_node *n = uprobes_tree.rb_node;
+-	struct uprobe *uprobe;
+-	int match;
++	struct __uprobe_key key = {
++		.inode = inode,
++		.offset = offset,
++	};
++	struct rb_node *node = rb_find(&key, &uprobes_tree, __uprobe_cmp_key);
+ 
+-	while (n) {
+-		uprobe = rb_entry(n, struct uprobe, rb_node);
+-		match = match_uprobe(&u, uprobe);
+-		if (!match)
+-			return get_uprobe(uprobe);
++	if (node)
++		return __node_2_uprobe(node);
+ 
+-		if (match < 0)
+-			n = n->rb_left;
+-		else
+-			n = n->rb_right;
+-	}
+ 	return NULL;
+ }
+ 
+@@ -668,32 +683,15 @@ static struct uprobe *find_uprobe(struct inode *inode, loff_t offset)
+ 
+ static struct uprobe *__insert_uprobe(struct uprobe *uprobe)
+ {
+-	struct rb_node **p = &uprobes_tree.rb_node;
+-	struct rb_node *parent = NULL;
+-	struct uprobe *u;
+-	int match;
++	struct rb_node *node;
+ 
+-	while (*p) {
+-		parent = *p;
+-		u = rb_entry(parent, struct uprobe, rb_node);
+-		match = match_uprobe(uprobe, u);
+-		if (!match)
+-			return get_uprobe(u);
++	node = rb_find_add(&uprobe->rb_node, &uprobes_tree, __uprobe_cmp);
++	if (node)
++		return get_uprobe(__node_2_uprobe(node));
+ 
+-		if (match < 0)
+-			p = &parent->rb_left;
+-		else
+-			p = &parent->rb_right;
+-
+-	}
+-
+-	u = NULL;
+-	rb_link_node(&uprobe->rb_node, parent, p);
+-	rb_insert_color(&uprobe->rb_node, &uprobes_tree);
+ 	/* get access + creation ref */
+ 	refcount_set(&uprobe->ref, 2);
+-
+-	return u;
++	return NULL;
+ }
+ 
+ /*
+-- 
+2.30.0
+
+From 2c4c7d742e3087cc45a275790db0317570043ef1 Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Wed, 29 Apr 2020 17:29:58 +0200
+Subject: [PATCH] rbtree, rtmutex: Use rb_add_cached()
+
+Reduce rbtree boiler plate by using the new helpers.
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Acked-by: Davidlohr Bueso <dbueso@suse.de>
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/locking/rtmutex.c | 54 ++++++++++++++--------------------------
+ 1 file changed, 18 insertions(+), 36 deletions(-)
+
+diff --git a/kernel/locking/rtmutex.c b/kernel/locking/rtmutex.c
+index cfdd5b932..ca14ed96f 100644
+--- a/kernel/locking/rtmutex.c
++++ b/kernel/locking/rtmutex.c
+@@ -267,27 +267,18 @@ rt_mutex_waiter_equal(struct rt_mutex_waiter *left,
+ 	return 1;
+ }
+ 
++#define __node_2_waiter(node) \
++	rb_entry((node), struct rt_mutex_waiter, tree_entry)
++
++static inline bool __waiter_less(struct rb_node *a, const struct rb_node *b)
++{
++	return rt_mutex_waiter_less(__node_2_waiter(a), __node_2_waiter(b));
++}
++
+ static void
+ rt_mutex_enqueue(struct rt_mutex *lock, struct rt_mutex_waiter *waiter)
+ {
+-	struct rb_node **link = &lock->waiters.rb_root.rb_node;
+-	struct rb_node *parent = NULL;
+-	struct rt_mutex_waiter *entry;
+-	bool leftmost = true;
+-
+-	while (*link) {
+-		parent = *link;
+-		entry = rb_entry(parent, struct rt_mutex_waiter, tree_entry);
+-		if (rt_mutex_waiter_less(waiter, entry)) {
+-			link = &parent->rb_left;
+-		} else {
+-			link = &parent->rb_right;
+-			leftmost = false;
+-		}
+-	}
+-
+-	rb_link_node(&waiter->tree_entry, parent, link);
+-	rb_insert_color_cached(&waiter->tree_entry, &lock->waiters, leftmost);
++	rb_add_cached(&waiter->tree_entry, &lock->waiters, __waiter_less);
+ }
+ 
+ static void
+@@ -300,27 +291,18 @@ rt_mutex_dequeue(struct rt_mutex *lock, struct rt_mutex_waiter *waiter)
+ 	RB_CLEAR_NODE(&waiter->tree_entry);
+ }
+ 
++#define __node_2_pi_waiter(node) \
++	rb_entry((node), struct rt_mutex_waiter, pi_tree_entry)
++
++static inline bool __pi_waiter_less(struct rb_node *a, const struct rb_node *b)
++{
++	return rt_mutex_waiter_less(__node_2_pi_waiter(a), __node_2_pi_waiter(b));
++}
++
+ static void
+ rt_mutex_enqueue_pi(struct task_struct *task, struct rt_mutex_waiter *waiter)
+ {
+-	struct rb_node **link = &task->pi_waiters.rb_root.rb_node;
+-	struct rb_node *parent = NULL;
+-	struct rt_mutex_waiter *entry;
+-	bool leftmost = true;
+-
+-	while (*link) {
+-		parent = *link;
+-		entry = rb_entry(parent, struct rt_mutex_waiter, pi_tree_entry);
+-		if (rt_mutex_waiter_less(waiter, entry)) {
+-			link = &parent->rb_left;
+-		} else {
+-			link = &parent->rb_right;
+-			leftmost = false;
+-		}
+-	}
+-
+-	rb_link_node(&waiter->pi_tree_entry, parent, link);
+-	rb_insert_color_cached(&waiter->pi_tree_entry, &task->pi_waiters, leftmost);
++	rb_add_cached(&waiter->pi_tree_entry, &task->pi_waiters, __pi_waiter_less);
+ }
+ 
+ static void
+-- 
+2.30.0
+
+From 7a976f77bb962ce9486e09eb839aa135619b54f3 Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Wed, 29 Apr 2020 17:07:53 +0200
+Subject: [PATCH] rbtree, timerqueue: Use rb_add_cached()
+
+Reduce rbtree boiler plate by using the new helpers.
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Acked-by: Davidlohr Bueso <dbueso@suse.de>
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ lib/timerqueue.c | 28 +++++++++-------------------
+ 1 file changed, 9 insertions(+), 19 deletions(-)
+
+diff --git a/lib/timerqueue.c b/lib/timerqueue.c
+index c52710964..cdb9c7658 100644
+--- a/lib/timerqueue.c
++++ b/lib/timerqueue.c
+@@ -14,6 +14,14 @@
+ #include <linux/rbtree.h>
+ #include <linux/export.h>
+ 
++#define __node_2_tq(_n) \
++	rb_entry((_n), struct timerqueue_node, node)
++
++static inline bool __timerqueue_less(struct rb_node *a, const struct rb_node *b)
++{
++	return __node_2_tq(a)->expires < __node_2_tq(b)->expires;
++}
++
+ /**
+  * timerqueue_add - Adds timer to timerqueue.
+  *
+@@ -26,28 +34,10 @@
+  */
+ bool timerqueue_add(struct timerqueue_head *head, struct timerqueue_node *node)
+ {
+-	struct rb_node **p = &head->rb_root.rb_root.rb_node;
+-	struct rb_node *parent = NULL;
+-	struct timerqueue_node *ptr;
+-	bool leftmost = true;
+-
+ 	/* Make sure we don't add nodes that are already added */
+ 	WARN_ON_ONCE(!RB_EMPTY_NODE(&node->node));
+ 
+-	while (*p) {
+-		parent = *p;
+-		ptr = rb_entry(parent, struct timerqueue_node, node);
+-		if (node->expires < ptr->expires) {
+-			p = &(*p)->rb_left;
+-		} else {
+-			p = &(*p)->rb_right;
+-			leftmost = false;
+-		}
+-	}
+-	rb_link_node(&node->node, parent, p);
+-	rb_insert_color_cached(&node->node, &head->rb_root, leftmost);
+-
+-	return leftmost;
++	return rb_add_cached(&node->node, &head->rb_root, __timerqueue_less);
+ }
+ EXPORT_SYMBOL_GPL(timerqueue_add);
+ 
+-- 
+2.30.0
+

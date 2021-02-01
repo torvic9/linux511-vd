@@ -11,7 +11,7 @@ _kernelname=-vd
 _sub=0
 _rc=rc6
 pkgver=${_basekernel}.${_sub}${_rc}
-pkgrel=1.1
+pkgrel=1
 _archpatch=20210129
 _prjc="r2"
 _stablequeue=a1028684e3
@@ -100,7 +100,7 @@ sha256sums=('c0fddca74b2f0691cdafbbc1c8f35414dd621c3167db78a2c34be5f2ace0e1f1'
             '09c81b7a8a74f7c4bcd775f28368a1d2bcae4792a7972dd7b728d132b0f04295'
             'ab010dc5ef6ce85d352956e5996d242246ecd0912b30f0b72025c38eadff8cd5'
             '8f357fab1c5b3e81240b543a6643fdbca1d8591f5dd18bc18e38ae992d78944c'
-            'd228240b919431866255d52662c3301167350760b351eb90b2a29a0bcdbb4217'
+            'f8be7257633cdec954b220feadebe60af3f7c7e6c6e9c0a140fe339856d42af3'
             '9b0c200b0dadfcfb1b3c42acd0c007e1d582a86abc6b04f3096e0535c8784ab6'
             '3d38fc4052b999b67aaed9fe9a4ba6ffd778ffbf7e94a66d5577391dbd08d12a'
             '0a05bbb282502db210f8ab843a5c3f39b847af5303fb7bd5a8655686cf76c1b7'

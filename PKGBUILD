@@ -9,10 +9,10 @@ pkgname=('linux511-vd' 'linux511-vd-headers')
 _basekernel=5.11
 _kernelname=-vd
 _sub=0
-_rc=rc5
+_rc=rc6
 pkgver=${_basekernel}.${_sub}${_rc}
-pkgrel=3
-_archpatch=20210124
+pkgrel=1.1
+_archpatch=20210129
 _prjc="r2"
 _stablequeue=a1028684e3
 arch=('x86_64')
@@ -29,7 +29,7 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     # "prepatch-${_basekernel/./}-g${_stablequeue}.patch"
     #
     # Arch patches
-    0001-arch-patches511-${_archpatch}.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11-rc/arch-patches-v5/0001-arch-patches.patch
+    0001-arch-patches511-${_archpatch}.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11-rc/arch-patches-v7/0001-arch-patches.patch
     # CPU patches
     0002-graysky-cpu-optimizations.patch
     0003-enable-O3-for-all-archs-and-add-option-for-O1.patch
@@ -62,8 +62,9 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     #
     # futex_wait_multiple
     # 1001-futex-futex_wait_multiple-krisman.patch
-    1001-futex-valve-integ-20201126.patch
-    # 1002-futex2-stable.patch # we do not yet need this
+    # 1001-futex-valve-integ-20201126.patch
+    1001-futex-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.10/futex-trunk-patches-v2/0001-futex-resync-from-gitlab.collabora.com.patch
+    #1002-futex2-stable-511.patch
     #
     # MANJARO Patches
     #
@@ -93,13 +94,13 @@ validpgpkeys=(
   '647F28654894E3BD457199BE38DBBDC86092693E'  # Greg Kroah-Hartman
 )
 
-sha256sums=('9864eb2880ffab9b776be9f6f222015165a23d1303619a3e2ed5671b88be3609'
+sha256sums=('c0fddca74b2f0691cdafbbc1c8f35414dd621c3167db78a2c34be5f2ace0e1f1'
             '29dd0f29a8001f9cf1062ee78e1e84ad7845fa0bd319dcab7ab9c5c7cb74c07c'
             '7101547c2b3dee1580138c221bacaa26e32e70afe86bfbace152b42074660429'
             '09c81b7a8a74f7c4bcd775f28368a1d2bcae4792a7972dd7b728d132b0f04295'
             'ab010dc5ef6ce85d352956e5996d242246ecd0912b30f0b72025c38eadff8cd5'
             '8f357fab1c5b3e81240b543a6643fdbca1d8591f5dd18bc18e38ae992d78944c'
-            '8b00e83ec9b288cf308b435de432a618649ef8fc9b083f5770b7627c5772800d'
+            'd228240b919431866255d52662c3301167350760b351eb90b2a29a0bcdbb4217'
             '9b0c200b0dadfcfb1b3c42acd0c007e1d582a86abc6b04f3096e0535c8784ab6'
             '3d38fc4052b999b67aaed9fe9a4ba6ffd778ffbf7e94a66d5577391dbd08d12a'
             '0a05bbb282502db210f8ab843a5c3f39b847af5303fb7bd5a8655686cf76c1b7'
@@ -116,7 +117,7 @@ sha256sums=('9864eb2880ffab9b776be9f6f222015165a23d1303619a3e2ed5671b88be3609'
             '49b29307ee96f85db5949866fd2f5a76502dd5be7564771febfe57c807b4f740'
             '1523298b9c29fa80ecc945982b7e450b5a9128054f91bce0fc596141ed3d1df2'
             'a881179be827dfee0b10c704fc8e1c501683f61e8041df392b48b51cba215856'
-            '5dace545bf5047cbac01bc587ee4cf369600ee66b92d9f30f1229c00ae887ffa'
+            '239307e0018ab2405b9afaa7d315ee3352b83819a3c75b65951749b52a3247d2'
             '7fd689f4ec88364d1ac00007e6f1e273ee9b53cae187e0f70e7f810303dc9303'
             'f7a36231b794022d49e53f464d25e48f2eebf6266c2cbe5756c63aa3bf03bae7'
             'acca50a9ffee480f29bd7de6e8b5963dc0d37d3103871d75bcffdb2acce6c82d'

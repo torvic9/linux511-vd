@@ -59,11 +59,13 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     0016-fs-buffer-revoke-lru-when-trying-to-drop-buffers-v4.patch
     # amd sensor fusion hub
     0017-amd-sfh-driver-refactored.patch
+    # btrfs patches
+    0018-btrfs-patches-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11-rc/btrfs-patches-v6/0001-btrfs-patches.patch
     #
     # futex_wait_multiple
     # 1001-futex-futex_wait_multiple-krisman.patch
     # 1001-futex-valve-integ-20201126.patch
-    1001-futex-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.10/futex-trunk-patches-v2/0001-futex-resync-from-gitlab.collabora.com.patch
+    1001-futex-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11-rc/futex-trunk-patches-v2/0001-futex-resync-from-gitlab.collabora.com.patch
     #1002-futex2-stable-511.patch
     #
     # MANJARO Patches
@@ -117,6 +119,7 @@ sha256sums=('c0fddca74b2f0691cdafbbc1c8f35414dd621c3167db78a2c34be5f2ace0e1f1'
             '49b29307ee96f85db5949866fd2f5a76502dd5be7564771febfe57c807b4f740'
             '1523298b9c29fa80ecc945982b7e450b5a9128054f91bce0fc596141ed3d1df2'
             'a881179be827dfee0b10c704fc8e1c501683f61e8041df392b48b51cba215856'
+            'd053785a07e7e4ee206bd3a4ac19a10615e80a8ec267149ba7c6e03ee84de61b'
             '239307e0018ab2405b9afaa7d315ee3352b83819a3c75b65951749b52a3247d2'
             '7fd689f4ec88364d1ac00007e6f1e273ee9b53cae187e0f70e7f810303dc9303'
             'f7a36231b794022d49e53f464d25e48f2eebf6266c2cbe5756c63aa3bf03bae7'
@@ -236,7 +239,7 @@ package_linux511-vd() {
   depends=('coreutils' 'linux-firmware' 'kmod' 'mkinitcpio>=27')
   optdepends=('crda: to set the correct wireless channels of your country')
   provides=(VIRTUALBOX-GUEST-MODULES)
-  replaces=(linux510-vd-virtualbox-guest-modules)
+  replaces=(linux511-vd-virtualbox-guest-modules)
 
   cd "${srcdir}/linux-${_basekernel}-${_rc}"
 

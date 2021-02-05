@@ -11,7 +11,7 @@ _kernelname=-vd
 _sub=0
 _rc=rc6
 pkgver=${_basekernel}.${_sub}${_rc}
-pkgrel=1
+pkgrel=4
 _archpatch=20210129
 _prjc="r2"
 _stablequeue=a1028684e3
@@ -61,6 +61,8 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     0017-amd-sfh-driver-refactored.patch
     # btrfs patches
     0018-btrfs-patches-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11-rc/btrfs-patches-v6/0001-btrfs-patches.patch
+    # amdgpu
+    0019-drm-amdgpu-correct-read-sclk-for-navi10.patch
     #
     # futex_wait_multiple
     # 1001-futex-futex_wait_multiple-krisman.patch
@@ -98,7 +100,7 @@ validpgpkeys=(
 
 sha256sums=('c0fddca74b2f0691cdafbbc1c8f35414dd621c3167db78a2c34be5f2ace0e1f1'
             '29dd0f29a8001f9cf1062ee78e1e84ad7845fa0bd319dcab7ab9c5c7cb74c07c'
-            '7101547c2b3dee1580138c221bacaa26e32e70afe86bfbace152b42074660429'
+            '7d5297a9445f6e89c3d5df0718f7a2e4bf9c3b0c0b86ea118ea961883cb1e8d2'
             '09c81b7a8a74f7c4bcd775f28368a1d2bcae4792a7972dd7b728d132b0f04295'
             'ab010dc5ef6ce85d352956e5996d242246ecd0912b30f0b72025c38eadff8cd5'
             '8f357fab1c5b3e81240b543a6643fdbca1d8591f5dd18bc18e38ae992d78944c'
@@ -120,6 +122,7 @@ sha256sums=('c0fddca74b2f0691cdafbbc1c8f35414dd621c3167db78a2c34be5f2ace0e1f1'
             '1523298b9c29fa80ecc945982b7e450b5a9128054f91bce0fc596141ed3d1df2'
             'a881179be827dfee0b10c704fc8e1c501683f61e8041df392b48b51cba215856'
             'd053785a07e7e4ee206bd3a4ac19a10615e80a8ec267149ba7c6e03ee84de61b'
+            '0487fd89528c780e05fb2c39c28b4826a5c06fbaea0ea1ebe4cbc433fc83569d'
             '239307e0018ab2405b9afaa7d315ee3352b83819a3c75b65951749b52a3247d2'
             '7fd689f4ec88364d1ac00007e6f1e273ee9b53cae187e0f70e7f810303dc9303'
             'f7a36231b794022d49e53f464d25e48f2eebf6266c2cbe5756c63aa3bf03bae7'
@@ -147,12 +150,12 @@ if [[ ${_clang} -eq 1 ]]; then
 	LLVMOPTS="LLVM=1 LLVM_IAS=1"
 	CLANGOPTS="CC=clang LD=ld.lld"
 	source+=('9001-objtool-fixes-jp.patch'
-	'9002-clang-lto-20210123.patch'
-	'9003-clang-pgo-v7.patch' # pgo is still very experimental
+	'9002-clang-lto-20210205.patch'
+	#'9003-clang-pgo-v7.patch' # pgo is still very experimental
 	)
 	sha256sums+=('6facba496859c28160d5872800834af28fb152feaf07d4cfa03cf1fc611bcd67'
-	'c8f09c8449b7248bbdbaf749a114803026c3ccd5e2dc207c0b412a4d5537647f'
-	'ea2b7feb663faa177a8aad36f99e68cffc4a95ce7a0fd321a0d7c86cb66204ea'
+	'92b364cd0da78dcb7d1689be54024d755e774cebb0cb15872328a86f74b71378'
+	#'ea2b7feb663faa177a8aad36f99e68cffc4a95ce7a0fd321a0d7c86cb66204ea'
 	)
 else
 	LLVMOPTS=""

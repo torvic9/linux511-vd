@@ -9,9 +9,9 @@ pkgname=('linux511-vd' 'linux511-vd-headers')
 _basekernel=5.11
 _kernelname=-vd
 _sub=0
-_rc=rc6
+_rc=rc7
 pkgver=${_basekernel}.${_sub}${_rc}
-pkgrel=4
+pkgrel=1
 _archpatch=20210129
 _prjc="r2"
 _stablequeue=a1028684e3
@@ -63,6 +63,8 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     0018-btrfs-patches-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11-rc/btrfs-patches-v6/0001-btrfs-patches.patch
     # amdgpu
     0019-drm-amdgpu-correct-read-sclk-for-navi10.patch
+    # hrtimer
+    0020-hrtick-reprogramming-and-optimization-v1.patch
     #
     # futex_wait_multiple
     # 1001-futex-futex_wait_multiple-krisman.patch
@@ -98,7 +100,7 @@ validpgpkeys=(
   '647F28654894E3BD457199BE38DBBDC86092693E'  # Greg Kroah-Hartman
 )
 
-sha256sums=('c0fddca74b2f0691cdafbbc1c8f35414dd621c3167db78a2c34be5f2ace0e1f1'
+sha256sums=('61b93b9f7251237fa5593eb50d1b5845752c2865ccab28bdb38a18fdafcf2720'
             '29dd0f29a8001f9cf1062ee78e1e84ad7845fa0bd319dcab7ab9c5c7cb74c07c'
             '7d5297a9445f6e89c3d5df0718f7a2e4bf9c3b0c0b86ea118ea961883cb1e8d2'
             '09c81b7a8a74f7c4bcd775f28368a1d2bcae4792a7972dd7b728d132b0f04295'
@@ -123,6 +125,7 @@ sha256sums=('c0fddca74b2f0691cdafbbc1c8f35414dd621c3167db78a2c34be5f2ace0e1f1'
             'a881179be827dfee0b10c704fc8e1c501683f61e8041df392b48b51cba215856'
             'd053785a07e7e4ee206bd3a4ac19a10615e80a8ec267149ba7c6e03ee84de61b'
             '0487fd89528c780e05fb2c39c28b4826a5c06fbaea0ea1ebe4cbc433fc83569d'
+            'c136216e641aa229946e54488f8149f61e70122dccb2497a7c955674b7ee7eab'
             '239307e0018ab2405b9afaa7d315ee3352b83819a3c75b65951749b52a3247d2'
             '7fd689f4ec88364d1ac00007e6f1e273ee9b53cae187e0f70e7f810303dc9303'
             'f7a36231b794022d49e53f464d25e48f2eebf6266c2cbe5756c63aa3bf03bae7'
@@ -154,7 +157,7 @@ if [[ ${_clang} -eq 1 ]]; then
 	#'9003-clang-pgo-v7.patch' # pgo is still very experimental
 	)
 	sha256sums+=('6facba496859c28160d5872800834af28fb152feaf07d4cfa03cf1fc611bcd67'
-	'92b364cd0da78dcb7d1689be54024d755e774cebb0cb15872328a86f74b71378'
+	'6b4a3962ebf8301cf677643ba7513f5335c19ed143c1f19fa7ae8f8449ef64dc'
 	#'ea2b7feb663faa177a8aad36f99e68cffc4a95ce7a0fd321a0d7c86cb66204ea'
 	)
 else

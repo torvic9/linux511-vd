@@ -122,6 +122,8 @@ Use the same method as in commit c65e774fb3f6 ("x86/mm: Make PGDIR_SHIFT
 and PTRS_PER_P4D variable") and change it to MAYBE_BUILD_BUG_ON(),
 so it only triggers for constant input.
 
+[vd: context fix]
+
 Signed-off-by: Arnd Bergmann <arnd@arndb.de>
 Tested-by: Nathan Chancellor <natechancellor@gmail.com>
 Reviewed-by: Nathan Chancellor <natechancellor@gmail.com>
@@ -137,16 +139,16 @@ index e1e8d4e3a..62bb1616b 100644
 --- a/arch/x86/platform/efi/efi_64.c
 +++ b/arch/x86/platform/efi/efi_64.c
 @@ -137,8 +137,8 @@ void efi_sync_low_kernel_mappings(void)
- 	 * As with PGDs, we share all P4D entries apart from the one entry
- 	 * that covers the EFI runtime mapping space.
- 	 */
--	BUILD_BUG_ON(p4d_index(EFI_VA_END) != p4d_index(MODULES_END));
--	BUILD_BUG_ON((EFI_VA_START & P4D_MASK) != (EFI_VA_END & P4D_MASK));
-+	MAYBE_BUILD_BUG_ON(p4d_index(EFI_VA_END) != p4d_index(MODULES_END));
-+	MAYBE_BUILD_BUG_ON((EFI_VA_START & P4D_MASK) != (EFI_VA_END & P4D_MASK));
- 
- 	pgd_efi = efi_pgd + pgd_index(EFI_VA_END);
- 	pgd_k = pgd_offset_k(EFI_VA_END);
+	 * We share all the PUD entries apart from those that map the
+	 * EFI regions. Copy around them.
+	 */
+-	BUILD_BUG_ON((EFI_VA_START & ~PUD_MASK) != 0);
+-	BUILD_BUG_ON((EFI_VA_END & ~PUD_MASK) != 0);
++	MAYBE_BUILD_BUG_ON((EFI_VA_START & ~PUD_MASK) != 0);
++	MAYBE_BUILD_BUG_ON((EFI_VA_END & ~PUD_MASK) != 0);
+
+	p4d_efi = p4d_offset(pgd_efi, EFI_VA_END);
+	p4d_k = p4d_offset(pgd_k, EFI_VA_END);
 -- 
 2.30.0
 

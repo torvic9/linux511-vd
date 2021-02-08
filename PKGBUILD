@@ -11,7 +11,7 @@ _kernelname=-vd
 _sub=0
 _rc=rc7
 pkgver=${_basekernel}.${_sub}${_rc}
-pkgrel=11
+pkgrel=2
 _archpatch=20210129
 _prjc="r2"
 _stablequeue=a1028684e3
@@ -41,24 +41,23 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     # AMD enhancements
     0007-dma-add-support-for-amd-ptdma-controller-driver.patch
     0008-acpi-add-processor-to-the-ignore-PSD-override-list.patch
-    # bfq fixes
-    0009-block-bfq-fixes-and-improvements.patch
-    # tip:sched/core
-    0010-tip-sched-core-20210205.patch
+    0009-amd-sfh-driver-refactored.patch
     # blk-mq fixes
-    0011-blk-mq-dont-complete-in-IRQ-use-llist_head.patch
+    0010-blk-mq-dont-complete-in-IRQ-use-llist_head.patch
+    # bfq fixes
+    0011-block-bfq-fixes-and-improvements.patch
+    # tip:sched/core
+    0012-tip-sched-core-20210205.patch
     # sched balance tweaks
-    0012-sched-fair-misfit-task-load-balance-tweaks.patch
-    # Nuvoton nc677x driver
-    0013-i2c-nuvoton-nc677x-hwmon-driver-git.patch::https://gitlab.com/CalcProgrammer1/OpenRGB/-/raw/master/OpenRGB.patch
+    0013-sched-fair-misfit-task-load-balance-tweaks.patch
     # rcu fixes
     0014-rcu-fixes-next.patch
     # rcu fix prio boost
-    0015-fix-rcu-priority-boosting.patch
+    0015-rcu-fix-priority-boosting.patch
+    # rcu resched fix
+    0016-rcu-sched-fix-ignored-resched-after-rcu_eqs_enter-v4.patch
     # fs buffer fix
-    0016-fs-buffer-revoke-lru-when-trying-to-drop-buffers-v4.patch
-    # amd sensor fusion hub
-    0017-amd-sfh-driver-refactored.patch
+    0017-fs-buffer-revoke-lru-when-trying-to-drop-buffers-v4.patch
     # btrfs patches
     0018-btrfs-patches-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11-rc/btrfs-patches-v6/0001-btrfs-patches.patch
     # amdgpu
@@ -67,6 +66,8 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     0020-hrtick-reprogramming-and-optimization-v1.patch
     # fix amd performance regression in cpufreq
     0021-cpufreq-acpi-fix-performance-regression-related-to-scale-invariance.patch
+    # Nuvoton nc677x driver
+    0022-i2c-nuvoton-nc677x-hwmon-driver-git.patch::https://gitlab.com/CalcProgrammer1/OpenRGB/-/raw/master/OpenRGB.patch
     #
     # futex_wait_multiple
     # 1001-futex-futex_wait_multiple-krisman.patch
@@ -116,19 +117,20 @@ sha256sums=('61b93b9f7251237fa5593eb50d1b5845752c2865ccab28bdb38a18fdafcf2720'
             'b817e7da8f4901cf2dda0f2fe7b9d8243f32a42d5729e953521ef18eec7a8eb9'
             '1f47d3e3956c41b47656f675a90fad9e318c7133ffe663dc0fd2c9aa0fbfeb3e'
             '5000348583882523ef3c36df27eabf4355e83d0605081a3bf5d4aaa28e518162'
+            'a881179be827dfee0b10c704fc8e1c501683f61e8041df392b48b51cba215856'
+            '12fdebdffb9ba9620a012eafba79162d83d13700a47af5b9feef4d91e9600d6f'
             '9e86bfb28c4c9a30a116f57c24d57cf7488df2755198425522564b4e8f8015e7'
             '6a29b8ca8c91d5391bf30438949d8fe5ec371c16a8c894b50595508c58af6dbb'
-            '12fdebdffb9ba9620a012eafba79162d83d13700a47af5b9feef4d91e9600d6f'
             '13acb14484a79496a07f65831686887854c89ed50d662682052fb025d99c5b5e'
-            'e7d724ac15daf428aa1e6a03737e5c1d040892d55fda8a66897fcac9323f285c'
             'a652bf7985cd0633ee12e61efb9dd898f28468e93caa852e210923fed92724fb'
             '49b29307ee96f85db5949866fd2f5a76502dd5be7564771febfe57c807b4f740'
+            '9b69afe30b539385c925cf1c670270cfbd80d926c1f800b1461f37e703981e36'
             '1523298b9c29fa80ecc945982b7e450b5a9128054f91bce0fc596141ed3d1df2'
-            'a881179be827dfee0b10c704fc8e1c501683f61e8041df392b48b51cba215856'
             'd053785a07e7e4ee206bd3a4ac19a10615e80a8ec267149ba7c6e03ee84de61b'
             '0487fd89528c780e05fb2c39c28b4826a5c06fbaea0ea1ebe4cbc433fc83569d'
             'c136216e641aa229946e54488f8149f61e70122dccb2497a7c955674b7ee7eab'
             'e29577400be466300c124df9a5dde99b1f6e879147172bdeb6cc273f94e863e6'
+            'e7d724ac15daf428aa1e6a03737e5c1d040892d55fda8a66897fcac9323f285c'
             '239307e0018ab2405b9afaa7d315ee3352b83819a3c75b65951749b52a3247d2'
             '7fd689f4ec88364d1ac00007e6f1e273ee9b53cae187e0f70e7f810303dc9303'
             'f7a36231b794022d49e53f464d25e48f2eebf6266c2cbe5756c63aa3bf03bae7'

@@ -3638,3 +3638,1841 @@ index c52710964..cdb9c7658 100644
 -- 
 2.30.0
 
+From e972d92d52a1f691498add14feb2ee5902d02404 Mon Sep 17 00:00:00 2001
+From: Dietmar Eggemann <dietmar.eggemann@arm.com>
+Date: Mon, 1 Feb 2021 10:53:53 +0100
+Subject: [PATCH] sched/topology: Fix sched_domain_topology_level alloc in
+ sched_init_numa()
+
+Commit "sched/topology: Make sched_init_numa() use a set for the
+deduplicating sort" allocates 'i + nr_levels (level)' instead of
+'i + nr_levels + 1' sched_domain_topology_level.
+
+This led to an Oops (on Arm64 juno with CONFIG_SCHED_DEBUG):
+
+sched_init_domains
+  build_sched_domains()
+    __free_domain_allocs()
+      __sdt_free() {
+	...
+        for_each_sd_topology(tl)
+	  ...
+          sd = *per_cpu_ptr(sdd->sd, j); <--
+	  ...
+      }
+
+Signed-off-by: Dietmar Eggemann <dietmar.eggemann@arm.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Tested-by: Vincent Guittot <vincent.guittot@linaro.org>
+Tested-by: Barry Song <song.bao.hua@hisilicon.com>
+Link: https://lkml.kernel.org/r/6000e39e-7d28-c360-9cd6-8798fd22a9bf@arm.com
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/topology.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/kernel/sched/topology.c b/kernel/sched/topology.c
+index bf5c9bd10..09d35044b 100644
+--- a/kernel/sched/topology.c
++++ b/kernel/sched/topology.c
+@@ -1702,7 +1702,7 @@ void sched_init_numa(void)
+ 	/* Compute default topology size */
+ 	for (i = 0; sched_domain_topology[i].mask; i++);
+ 
+-	tl = kzalloc((i + nr_levels) *
++	tl = kzalloc((i + nr_levels + 1) *
+ 			sizeof(struct sched_domain_topology_level), GFP_KERNEL);
+ 	if (!tl)
+ 		return;
+-- 
+2.30.0
+
+From 4d38ea6a6d93115113fb4c023d5bb15e8ce1589c Mon Sep 17 00:00:00 2001
+From: Dietmar Eggemann <dietmar.eggemann@arm.com>
+Date: Thu, 28 Jan 2021 14:10:38 +0100
+Subject: [PATCH] sched: Remove MAX_USER_RT_PRIO
+
+Commit d46523ea32a7 ("[PATCH] fix MAX_USER_RT_PRIO and MAX_RT_PRIO")
+was introduced due to a a small time period in which the realtime patch
+set was using different values for MAX_USER_RT_PRIO and MAX_RT_PRIO.
+
+This is no longer true, i.e. now MAX_RT_PRIO == MAX_USER_RT_PRIO.
+
+Get rid of MAX_USER_RT_PRIO and make everything use MAX_RT_PRIO
+instead.
+
+Signed-off-by: Dietmar Eggemann <dietmar.eggemann@arm.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Link: https://lkml.kernel.org/r/20210128131040.296856-2-dietmar.eggemann@arm.com
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ include/linux/sched/prio.h | 9 +--------
+ kernel/sched/core.c        | 7 +++----
+ 2 files changed, 4 insertions(+), 12 deletions(-)
+
+diff --git a/include/linux/sched/prio.h b/include/linux/sched/prio.h
+index 7d64feafc..d111f2fd7 100644
+--- a/include/linux/sched/prio.h
++++ b/include/linux/sched/prio.h
+@@ -11,16 +11,9 @@
+  * priority is 0..MAX_RT_PRIO-1, and SCHED_NORMAL/SCHED_BATCH
+  * tasks are in the range MAX_RT_PRIO..MAX_PRIO-1. Priority
+  * values are inverted: lower p->prio value means higher priority.
+- *
+- * The MAX_USER_RT_PRIO value allows the actual maximum
+- * RT priority to be separate from the value exported to
+- * user-space.  This allows kernel threads to set their
+- * priority to a value higher than any user task. Note:
+- * MAX_RT_PRIO must not be smaller than MAX_USER_RT_PRIO.
+  */
+ 
+-#define MAX_USER_RT_PRIO	100
+-#define MAX_RT_PRIO		MAX_USER_RT_PRIO
++#define MAX_RT_PRIO		100
+ 
+ #define MAX_PRIO		(MAX_RT_PRIO + NICE_WIDTH)
+ #define DEFAULT_PRIO		(MAX_RT_PRIO + NICE_WIDTH / 2)
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 06b449942..625ec1e12 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -5897,11 +5897,10 @@ static int __sched_setscheduler(struct task_struct *p,
+ 
+ 	/*
+ 	 * Valid priorities for SCHED_FIFO and SCHED_RR are
+-	 * 1..MAX_USER_RT_PRIO-1, valid priority for SCHED_NORMAL,
++	 * 1..MAX_RT_PRIO-1, valid priority for SCHED_NORMAL,
+ 	 * SCHED_BATCH and SCHED_IDLE is 0.
+ 	 */
+-	if ((p->mm && attr->sched_priority > MAX_USER_RT_PRIO-1) ||
+-	    (!p->mm && attr->sched_priority > MAX_RT_PRIO-1))
++	if (attr->sched_priority > MAX_RT_PRIO-1)
+ 		return -EINVAL;
+ 	if ((dl_policy(policy) && !__checkparam_dl(attr)) ||
+ 	    (rt_policy(policy) != (attr->sched_priority != 0)))
+@@ -6969,7 +6968,7 @@ SYSCALL_DEFINE1(sched_get_priority_max, int, policy)
+ 	switch (policy) {
+ 	case SCHED_FIFO:
+ 	case SCHED_RR:
+-		ret = MAX_USER_RT_PRIO-1;
++		ret = MAX_RT_PRIO-1;
+ 		break;
+ 	case SCHED_DEADLINE:
+ 	case SCHED_NORMAL:
+-- 
+2.30.0
+
+From c18b4a67cc459fb8389f6a89ce28e404aafe562c Mon Sep 17 00:00:00 2001
+From: Dietmar Eggemann <dietmar.eggemann@arm.com>
+Date: Thu, 28 Jan 2021 14:10:39 +0100
+Subject: [PATCH] sched: Remove USER_PRIO, TASK_USER_PRIO and MAX_USER_PRIO
+
+The only remaining use of MAX_USER_PRIO (and USER_PRIO) is the
+SCALE_PRIO() definition in the PowerPC Cell architecture's Synergistic
+Processor Unit (SPU) scheduler. TASK_USER_PRIO isn't used anymore.
+
+Commit fe443ef2ac42 ("[POWERPC] spusched: Dynamic timeslicing for
+SCHED_OTHER") copied SCALE_PRIO() from the task scheduler in v2.6.23.
+
+Commit a4ec24b48dde ("sched: tidy up SCHED_RR") removed it from the task
+scheduler in v2.6.24.
+
+Commit 3ee237dddcd8 ("sched/prio: Add 3 macros of MAX_NICE, MIN_NICE and
+NICE_WIDTH in prio.h") introduced NICE_WIDTH much later.
+
+With:
+
+  MAX_USER_PRIO = USER_PRIO(MAX_PRIO)
+
+                = MAX_PRIO - MAX_RT_PRIO
+
+       MAX_PRIO = MAX_RT_PRIO + NICE_WIDTH
+
+  MAX_USER_PRIO = MAX_RT_PRIO + NICE_WIDTH - MAX_RT_PRIO
+
+  MAX_USER_PRIO = NICE_WIDTH
+
+MAX_USER_PRIO can be replaced by NICE_WIDTH to be able to remove all the
+{*_}USER_PRIO defines.
+
+Signed-off-by: Dietmar Eggemann <dietmar.eggemann@arm.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Link: https://lkml.kernel.org/r/20210128131040.296856-3-dietmar.eggemann@arm.com
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ arch/powerpc/platforms/cell/spufs/sched.c | 2 +-
+ include/linux/sched/prio.h                | 9 ---------
+ kernel/sched/sched.h                      | 2 +-
+ 3 files changed, 2 insertions(+), 11 deletions(-)
+
+diff --git a/arch/powerpc/platforms/cell/spufs/sched.c b/arch/powerpc/platforms/cell/spufs/sched.c
+index f18d5067c..aeb7f3922 100644
+--- a/arch/powerpc/platforms/cell/spufs/sched.c
++++ b/arch/powerpc/platforms/cell/spufs/sched.c
+@@ -72,7 +72,7 @@ static struct timer_list spuloadavg_timer;
+ #define DEF_SPU_TIMESLICE	(100 * HZ / (1000 * SPUSCHED_TICK))
+ 
+ #define SCALE_PRIO(x, prio) \
+-	max(x * (MAX_PRIO - prio) / (MAX_USER_PRIO / 2), MIN_SPU_TIMESLICE)
++	max(x * (MAX_PRIO - prio) / (NICE_WIDTH / 2), MIN_SPU_TIMESLICE)
+ 
+ /*
+  * scale user-nice values [ -20 ... 0 ... 19 ] to time slice values:
+diff --git a/include/linux/sched/prio.h b/include/linux/sched/prio.h
+index d111f2fd7..ab83d85e1 100644
+--- a/include/linux/sched/prio.h
++++ b/include/linux/sched/prio.h
+@@ -26,15 +26,6 @@
+ #define NICE_TO_PRIO(nice)	((nice) + DEFAULT_PRIO)
+ #define PRIO_TO_NICE(prio)	((prio) - DEFAULT_PRIO)
+ 
+-/*
+- * 'User priority' is the nice value converted to something we
+- * can work with better when scaling various scheduler parameters,
+- * it's a [ 0 ... 39 ] range.
+- */
+-#define USER_PRIO(p)		((p)-MAX_RT_PRIO)
+-#define TASK_USER_PRIO(p)	USER_PRIO((p)->static_prio)
+-#define MAX_USER_PRIO		(USER_PRIO(MAX_PRIO))
+-
+ /*
+  * Convert nice value [19,-20] to rlimit style value [1,40].
+  */
+diff --git a/kernel/sched/sched.h b/kernel/sched/sched.h
+index 045b01064..6edc67df3 100644
+--- a/kernel/sched/sched.h
++++ b/kernel/sched/sched.h
+@@ -140,7 +140,7 @@ extern void call_trace_sched_update_nr_running(struct rq *rq, int count);
+  * scale_load() and scale_load_down(w) to convert between them. The
+  * following must be true:
+  *
+- *  scale_load(sched_prio_to_weight[USER_PRIO(NICE_TO_PRIO(0))]) == NICE_0_LOAD
++ *  scale_load(sched_prio_to_weight[NICE_TO_PRIO(0)-MAX_RT_PRIO]) == NICE_0_LOAD
+  *
+  */
+ #define NICE_0_LOAD		(1L << NICE_0_LOAD_SHIFT)
+-- 
+2.30.0
+
+From 075a28439d0c8eb6d3c799e1eed24bb9bc7750cd Mon Sep 17 00:00:00 2001
+From: Dietmar Eggemann <dietmar.eggemann@arm.com>
+Date: Thu, 28 Jan 2021 14:10:40 +0100
+Subject: [PATCH] sched/core: Update task_prio() function header
+
+The description of the RT offset and the values for 'normal' tasks needs
+update. Moreover there are DL tasks now.
+task_prio() has to stay like it is to guarantee compatibility with the
+/proc/<pid>/stat priority field:
+
+  # cat /proc/<pid>/stat | awk '{ print $18; }'
+
+Signed-off-by: Dietmar Eggemann <dietmar.eggemann@arm.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Link: https://lkml.kernel.org/r/20210128131040.296856-4-dietmar.eggemann@arm.com
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/core.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 625ec1e12..be3a956c2 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -5602,8 +5602,12 @@ SYSCALL_DEFINE1(nice, int, increment)
+  * @p: the task in question.
+  *
+  * Return: The priority value as seen by users in /proc.
+- * RT tasks are offset by -200. Normal tasks are centered
+- * around 0, value goes from -16 to +15.
++ *
++ * sched policy         return value   kernel prio    user prio/nice
++ *
++ * normal, batch, idle     [0 ... 39]  [100 ... 139]          0/[-20 ... 19]
++ * fifo, rr             [-2 ... -100]     [98 ... 0]  [1 ... 99]
++ * deadline                     -101             -1           0
+  */
+ int task_prio(const struct task_struct *p)
+ {
+-- 
+2.30.0
+
+From 407bc881b21d9b6cd14dd9b09adffc2d8e45fbe9 Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Mon, 18 Jan 2021 15:12:18 +0100
+Subject: [PATCH] static_call: Pull some static_call declarations to the type
+ headers
+
+Some static call declarations are going to be needed on low level header
+files. Move the necessary material to the dedicated static call types
+header to avoid inclusion dependency hell.
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Signed-off-by: Frederic Weisbecker <frederic@kernel.org>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Link: https://lkml.kernel.org/r/20210118141223.123667-4-frederic@kernel.org
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ include/linux/static_call.h             | 21 -------------------
+ include/linux/static_call_types.h       | 27 +++++++++++++++++++++++++
+ tools/include/linux/static_call_types.h | 27 +++++++++++++++++++++++++
+ 3 files changed, 54 insertions(+), 21 deletions(-)
+
+diff --git a/include/linux/static_call.h b/include/linux/static_call.h
+index 695da4c9b..a2c064585 100644
+--- a/include/linux/static_call.h
++++ b/include/linux/static_call.h
+@@ -107,26 +107,10 @@ extern void arch_static_call_transform(void *site, void *tramp, void *func, bool
+ 
+ #define STATIC_CALL_TRAMP_ADDR(name) &STATIC_CALL_TRAMP(name)
+ 
+-/*
+- * __ADDRESSABLE() is used to ensure the key symbol doesn't get stripped from
+- * the symbol table so that objtool can reference it when it generates the
+- * .static_call_sites section.
+- */
+-#define __static_call(name)						\
+-({									\
+-	__ADDRESSABLE(STATIC_CALL_KEY(name));				\
+-	&STATIC_CALL_TRAMP(name);					\
+-})
+-
+ #else
+ #define STATIC_CALL_TRAMP_ADDR(name) NULL
+ #endif
+ 
+-
+-#define DECLARE_STATIC_CALL(name, func)					\
+-	extern struct static_call_key STATIC_CALL_KEY(name);		\
+-	extern typeof(func) STATIC_CALL_TRAMP(name);
+-
+ #define static_call_update(name, func)					\
+ ({									\
+ 	BUILD_BUG_ON(!__same_type(*(func), STATIC_CALL_TRAMP(name)));	\
+@@ -174,7 +158,6 @@ extern int static_call_text_reserved(void *start, void *end);
+ 	};								\
+ 	ARCH_DEFINE_STATIC_CALL_NULL_TRAMP(name)
+ 
+-#define static_call(name)	__static_call(name)
+ #define static_call_cond(name)	(void)__static_call(name)
+ 
+ #define EXPORT_STATIC_CALL(name)					\
+@@ -207,7 +190,6 @@ struct static_call_key {
+ 	};								\
+ 	ARCH_DEFINE_STATIC_CALL_NULL_TRAMP(name)
+ 
+-#define static_call(name)	__static_call(name)
+ #define static_call_cond(name)	(void)__static_call(name)
+ 
+ static inline
+@@ -252,9 +234,6 @@ struct static_call_key {
+ 		.func = NULL,						\
+ 	}
+ 
+-#define static_call(name)						\
+-	((typeof(STATIC_CALL_TRAMP(name))*)(STATIC_CALL_KEY(name).func))
+-
+ static inline void __static_call_nop(void) { }
+ 
+ /*
+diff --git a/include/linux/static_call_types.h b/include/linux/static_call_types.h
+index 89135bb35..08f78b1b8 100644
+--- a/include/linux/static_call_types.h
++++ b/include/linux/static_call_types.h
+@@ -4,6 +4,7 @@
+ 
+ #include <linux/types.h>
+ #include <linux/stringify.h>
++#include <linux/compiler.h>
+ 
+ #define STATIC_CALL_KEY_PREFIX		__SCK__
+ #define STATIC_CALL_KEY_PREFIX_STR	__stringify(STATIC_CALL_KEY_PREFIX)
+@@ -32,4 +33,30 @@ struct static_call_site {
+ 	s32 key;
+ };
+ 
++#define DECLARE_STATIC_CALL(name, func)					\
++	extern struct static_call_key STATIC_CALL_KEY(name);		\
++	extern typeof(func) STATIC_CALL_TRAMP(name);
++
++#ifdef CONFIG_HAVE_STATIC_CALL
++
++/*
++ * __ADDRESSABLE() is used to ensure the key symbol doesn't get stripped from
++ * the symbol table so that objtool can reference it when it generates the
++ * .static_call_sites section.
++ */
++#define __static_call(name)						\
++({									\
++	__ADDRESSABLE(STATIC_CALL_KEY(name));				\
++	&STATIC_CALL_TRAMP(name);					\
++})
++
++#define static_call(name)	__static_call(name)
++
++#else
++
++#define static_call(name)						\
++	((typeof(STATIC_CALL_TRAMP(name))*)(STATIC_CALL_KEY(name).func))
++
++#endif /* CONFIG_HAVE_STATIC_CALL */
++
+ #endif /* _STATIC_CALL_TYPES_H */
+diff --git a/tools/include/linux/static_call_types.h b/tools/include/linux/static_call_types.h
+index 89135bb35..08f78b1b8 100644
+--- a/tools/include/linux/static_call_types.h
++++ b/tools/include/linux/static_call_types.h
+@@ -4,6 +4,7 @@
+ 
+ #include <linux/types.h>
+ #include <linux/stringify.h>
++#include <linux/compiler.h>
+ 
+ #define STATIC_CALL_KEY_PREFIX		__SCK__
+ #define STATIC_CALL_KEY_PREFIX_STR	__stringify(STATIC_CALL_KEY_PREFIX)
+@@ -32,4 +33,30 @@ struct static_call_site {
+ 	s32 key;
+ };
+ 
++#define DECLARE_STATIC_CALL(name, func)					\
++	extern struct static_call_key STATIC_CALL_KEY(name);		\
++	extern typeof(func) STATIC_CALL_TRAMP(name);
++
++#ifdef CONFIG_HAVE_STATIC_CALL
++
++/*
++ * __ADDRESSABLE() is used to ensure the key symbol doesn't get stripped from
++ * the symbol table so that objtool can reference it when it generates the
++ * .static_call_sites section.
++ */
++#define __static_call(name)						\
++({									\
++	__ADDRESSABLE(STATIC_CALL_KEY(name));				\
++	&STATIC_CALL_TRAMP(name);					\
++})
++
++#define static_call(name)	__static_call(name)
++
++#else
++
++#define static_call(name)						\
++	((typeof(STATIC_CALL_TRAMP(name))*)(STATIC_CALL_KEY(name).func))
++
++#endif /* CONFIG_HAVE_STATIC_CALL */
++
+ #endif /* _STATIC_CALL_TYPES_H */
+-- 
+2.30.0
+
+From 2f44200d3f3d6e6abab4e5529335f7852936f3a1 Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Mon, 18 Jan 2021 15:12:16 +0100
+Subject: [PATCH] static_call/x86: Add __static_call_return0()
+
+Provide a stub function that return 0 and wire up the static call site
+patching to replace the CALL with a single 5 byte instruction that
+clears %RAX, the return value register.
+
+The function can be cast to any function pointer type that has a
+single %RAX return (including pointers). Also provide a version that
+returns an int for convenience. We are clearing the entire %RAX register
+in any case, whether the return value is 32 or 64 bits, since %RAX is
+always a scratch register anyway.
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Signed-off-by: Frederic Weisbecker <frederic@kernel.org>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Link: https://lkml.kernel.org/r/20210118141223.123667-2-frederic@kernel.org
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ arch/x86/kernel/static_call.c | 17 +++++++++++++++--
+ include/linux/static_call.h   | 12 ++++++++++++
+ kernel/static_call.c          |  5 +++++
+ 3 files changed, 32 insertions(+), 2 deletions(-)
+
+diff --git a/arch/x86/kernel/static_call.c b/arch/x86/kernel/static_call.c
+index ca9a380d9..9442c4136 100644
+--- a/arch/x86/kernel/static_call.c
++++ b/arch/x86/kernel/static_call.c
+@@ -11,14 +11,26 @@ enum insn_type {
+ 	RET = 3,  /* tramp / site cond-tail-call */
+ };
+ 
++/*
++ * data16 data16 xorq %rax, %rax - a single 5 byte instruction that clears %rax
++ * The REX.W cancels the effect of any data16.
++ */
++static const u8 xor5rax[] = { 0x66, 0x66, 0x48, 0x31, 0xc0 };
++
+ static void __ref __static_call_transform(void *insn, enum insn_type type, void *func)
+ {
++	const void *emulate = NULL;
+ 	int size = CALL_INSN_SIZE;
+ 	const void *code;
+ 
+ 	switch (type) {
+ 	case CALL:
+ 		code = text_gen_insn(CALL_INSN_OPCODE, insn, func);
++		if (func == &__static_call_return0) {
++			emulate = code;
++			code = &xor5rax;
++		}
++
+ 		break;
+ 
+ 	case NOP:
+@@ -41,7 +53,7 @@ static void __ref __static_call_transform(void *insn, enum insn_type type, void
+ 	if (unlikely(system_state == SYSTEM_BOOTING))
+ 		return text_poke_early(insn, code, size);
+ 
+-	text_poke_bp(insn, code, size, NULL);
++	text_poke_bp(insn, code, size, emulate);
+ }
+ 
+ static void __static_call_validate(void *insn, bool tail)
+@@ -54,7 +66,8 @@ static void __static_call_validate(void *insn, bool tail)
+ 			return;
+ 	} else {
+ 		if (opcode == CALL_INSN_OPCODE ||
+-		    !memcmp(insn, ideal_nops[NOP_ATOMIC5], 5))
++		    !memcmp(insn, ideal_nops[NOP_ATOMIC5], 5) ||
++		    !memcmp(insn, xor5rax, 5))
+ 			return;
+ 	}
+ 
+diff --git a/include/linux/static_call.h b/include/linux/static_call.h
+index a2c064585..bd6735d10 100644
+--- a/include/linux/static_call.h
++++ b/include/linux/static_call.h
+@@ -142,6 +142,8 @@ extern void __static_call_update(struct static_call_key *key, void *tramp, void
+ extern int static_call_mod_init(struct module *mod);
+ extern int static_call_text_reserved(void *start, void *end);
+ 
++extern long __static_call_return0(void);
++
+ #define DEFINE_STATIC_CALL(name, _func)					\
+ 	DECLARE_STATIC_CALL(name, _func);				\
+ 	struct static_call_key STATIC_CALL_KEY(name) = {		\
+@@ -206,6 +208,11 @@ static inline int static_call_text_reserved(void *start, void *end)
+ 	return 0;
+ }
+ 
++static inline long __static_call_return0(void)
++{
++	return 0;
++}
++
+ #define EXPORT_STATIC_CALL(name)					\
+ 	EXPORT_SYMBOL(STATIC_CALL_KEY(name));				\
+ 	EXPORT_SYMBOL(STATIC_CALL_TRAMP(name))
+@@ -222,6 +229,11 @@ struct static_call_key {
+ 	void *func;
+ };
+ 
++static inline long __static_call_return0(void)
++{
++	return 0;
++}
++
+ #define DEFINE_STATIC_CALL(name, _func)					\
+ 	DECLARE_STATIC_CALL(name, _func);				\
+ 	struct static_call_key STATIC_CALL_KEY(name) = {		\
+diff --git a/kernel/static_call.c b/kernel/static_call.c
+index 84565c2a4..0bc11b5ce 100644
+--- a/kernel/static_call.c
++++ b/kernel/static_call.c
+@@ -438,6 +438,11 @@ int __init static_call_init(void)
+ }
+ early_initcall(static_call_init);
+ 
++long __static_call_return0(void)
++{
++	return 0;
++}
++
+ #ifdef CONFIG_STATIC_CALL_SELFTEST
+ 
+ static int func_a(int x)
+-- 
+2.30.0
+
+From 50ace20f2cfecd90c88edaf58400b362f42f2960 Mon Sep 17 00:00:00 2001
+From: Frederic Weisbecker <frederic@kernel.org>
+Date: Mon, 18 Jan 2021 15:12:17 +0100
+Subject: [PATCH] static_call: Provide DEFINE_STATIC_CALL_RET0()
+
+DECLARE_STATIC_CALL() must pass the original function targeted for a
+given static call. But DEFINE_STATIC_CALL() may want to initialize it as
+off. In this case we can't pass NULL (for functions without return value)
+or __static_call_return0 (for functions returning a value) directly
+to DEFINE_STATIC_CALL() as that may trigger a static call redeclaration
+with a different function prototype. Type casts neither can work around
+that as they don't get along with typeof().
+
+The proper way to do that for functions that don't return a value is
+to use DEFINE_STATIC_CALL_NULL(). But functions returning a actual value
+don't have an equivalent yet.
+
+Provide DEFINE_STATIC_CALL_RET0() to solve this situation.
+
+Signed-off-by: Frederic Weisbecker <frederic@kernel.org>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Link: https://lkml.kernel.org/r/20210118141223.123667-3-frederic@kernel.org
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ include/linux/static_call.h | 22 ++++++++++++++--------
+ 1 file changed, 14 insertions(+), 8 deletions(-)
+
+diff --git a/include/linux/static_call.h b/include/linux/static_call.h
+index bd6735d10..d69dd8b97 100644
+--- a/include/linux/static_call.h
++++ b/include/linux/static_call.h
+@@ -144,13 +144,13 @@ extern int static_call_text_reserved(void *start, void *end);
+ 
+ extern long __static_call_return0(void);
+ 
+-#define DEFINE_STATIC_CALL(name, _func)					\
++#define __DEFINE_STATIC_CALL(name, _func, _func_init)			\
+ 	DECLARE_STATIC_CALL(name, _func);				\
+ 	struct static_call_key STATIC_CALL_KEY(name) = {		\
+-		.func = _func,						\
++		.func = _func_init,					\
+ 		.type = 1,						\
+ 	};								\
+-	ARCH_DEFINE_STATIC_CALL_TRAMP(name, _func)
++	ARCH_DEFINE_STATIC_CALL_TRAMP(name, _func_init)
+ 
+ #define DEFINE_STATIC_CALL_NULL(name, _func)				\
+ 	DECLARE_STATIC_CALL(name, _func);				\
+@@ -178,12 +178,12 @@ struct static_call_key {
+ 	void *func;
+ };
+ 
+-#define DEFINE_STATIC_CALL(name, _func)					\
++#define __DEFINE_STATIC_CALL(name, _func, _func_init)			\
+ 	DECLARE_STATIC_CALL(name, _func);				\
+ 	struct static_call_key STATIC_CALL_KEY(name) = {		\
+-		.func = _func,						\
++		.func = _func_init,					\
+ 	};								\
+-	ARCH_DEFINE_STATIC_CALL_TRAMP(name, _func)
++	ARCH_DEFINE_STATIC_CALL_TRAMP(name, _func_init)
+ 
+ #define DEFINE_STATIC_CALL_NULL(name, _func)				\
+ 	DECLARE_STATIC_CALL(name, _func);				\
+@@ -234,10 +234,10 @@ static inline long __static_call_return0(void)
+ 	return 0;
+ }
+ 
+-#define DEFINE_STATIC_CALL(name, _func)					\
++#define __DEFINE_STATIC_CALL(name, _func, _func_init)			\
+ 	DECLARE_STATIC_CALL(name, _func);				\
+ 	struct static_call_key STATIC_CALL_KEY(name) = {		\
+-		.func = _func,						\
++		.func = _func_init,					\
+ 	}
+ 
+ #define DEFINE_STATIC_CALL_NULL(name, _func)				\
+@@ -286,4 +286,10 @@ static inline int static_call_text_reserved(void *start, void *end)
+ 
+ #endif /* CONFIG_HAVE_STATIC_CALL */
+ 
++#define DEFINE_STATIC_CALL(name, _func)					\
++	__DEFINE_STATIC_CALL(name, _func, _func)
++
++#define DEFINE_STATIC_CALL_RET0(name, _func)				\
++	__DEFINE_STATIC_CALL(name, _func, __static_call_return0)
++
+ #endif /* _LINUX_STATIC_CALL_H */
+-- 
+2.30.0
+
+From 5759bcdb871f7f73b033643cd27d6cec33280540 Mon Sep 17 00:00:00 2001
+From: Michal Hocko <mhocko@kernel.org>
+Date: Mon, 18 Jan 2021 15:12:19 +0100
+Subject: [PATCH] preempt: Introduce CONFIG_PREEMPT_DYNAMIC
+
+Preemption mode selection is currently hardcoded on Kconfig choices.
+Introduce a dedicated option to tune preemption flavour at boot time,
+
+This will be only available on architectures efficiently supporting
+static calls in order not to tempt with the feature against additional
+overhead that might be prohibitive or undesirable.
+
+CONFIG_PREEMPT_DYNAMIC is automatically selected by CONFIG_PREEMPT if
+the architecture provides the necessary support (CONFIG_STATIC_CALL_INLINE,
+CONFIG_GENERIC_ENTRY, and provide with __preempt_schedule_function() /
+__preempt_schedule_notrace_function()).
+
+Suggested-by: Peter Zijlstra <peterz@infradead.org>
+Signed-off-by: Frederic Weisbecker <frederic@kernel.org>
+Signed-off-by: Michal Hocko <mhocko@suse.com>
+[peterz: relax requirement to HAVE_STATIC_CALL]
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Link: https://lkml.kernel.org/r/20210118141223.123667-5-frederic@kernel.org
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ .../admin-guide/kernel-parameters.txt         |  7 +++++++
+ arch/Kconfig                                  |  9 +++++++++
+ arch/x86/Kconfig                              |  1 +
+ kernel/Kconfig.preempt                        | 19 +++++++++++++++++++
+ 4 files changed, 36 insertions(+)
+
+diff --git a/Documentation/admin-guide/kernel-parameters.txt b/Documentation/admin-guide/kernel-parameters.txt
+index c722ec19c..e85486379 100644
+--- a/Documentation/admin-guide/kernel-parameters.txt
++++ b/Documentation/admin-guide/kernel-parameters.txt
+@@ -3916,6 +3916,13 @@
+ 			Format: {"off"}
+ 			Disable Hardware Transactional Memory
+ 
++	preempt=	[KNL]
++			Select preemption mode if you have CONFIG_PREEMPT_DYNAMIC
++			none - Limited to cond_resched() calls
++			voluntary - Limited to cond_resched() and might_sleep() calls
++			full - Any section that isn't explicitly preempt disabled
++			       can be preempted anytime.
++
+ 	print-fatal-signals=
+ 			[KNL] debug: print fatal signals
+ 
+diff --git a/arch/Kconfig b/arch/Kconfig
+index 78c6f05b1..94d3dde8e 100644
+--- a/arch/Kconfig
++++ b/arch/Kconfig
+@@ -1090,6 +1090,15 @@ config HAVE_STATIC_CALL_INLINE
+ 	bool
+ 	depends on HAVE_STATIC_CALL
+ 
++config HAVE_PREEMPT_DYNAMIC
++	bool
++	depends on HAVE_STATIC_CALL
++	depends on GENERIC_ENTRY
++	help
++	   Select this if the architecture support boot time preempt setting
++	   on top of static calls. It is strongly advised to support inline
++	   static call to avoid any overhead.
++
+ config ARCH_WANT_LD_ORPHAN_WARN
+ 	bool
+ 	help
+diff --git a/arch/x86/Kconfig b/arch/x86/Kconfig
+index 7b6dd10b1..d021da955 100644
+--- a/arch/x86/Kconfig
++++ b/arch/x86/Kconfig
+@@ -223,6 +223,7 @@ config X86
+ 	select HAVE_STACK_VALIDATION		if X86_64
+ 	select HAVE_STATIC_CALL
+ 	select HAVE_STATIC_CALL_INLINE		if HAVE_STACK_VALIDATION
++	select HAVE_PREEMPT_DYNAMIC
+ 	select HAVE_RSEQ
+ 	select HAVE_SYSCALL_TRACEPOINTS
+ 	select HAVE_UNSTABLE_SCHED_CLOCK
+diff --git a/kernel/Kconfig.preempt b/kernel/Kconfig.preempt
+index bf82259cf..416017301 100644
+--- a/kernel/Kconfig.preempt
++++ b/kernel/Kconfig.preempt
+@@ -40,6 +40,7 @@ config PREEMPT
+ 	depends on !ARCH_NO_PREEMPT
+ 	select PREEMPTION
+ 	select UNINLINE_SPIN_UNLOCK if !ARCH_INLINE_SPIN_UNLOCK
++	select PREEMPT_DYNAMIC if HAVE_PREEMPT_DYNAMIC
+ 	help
+ 	  This option reduces the latency of the kernel by making
+ 	  all kernel code (that is not executing in a critical section)
+@@ -80,3 +81,21 @@ config PREEMPT_COUNT
+ config PREEMPTION
+        bool
+        select PREEMPT_COUNT
++
++config PREEMPT_DYNAMIC
++	bool
++	help
++	  This option allows to define the preemption model on the kernel
++	  command line parameter and thus override the default preemption
++	  model defined during compile time.
++
++	  The feature is primarily interesting for Linux distributions which
++	  provide a pre-built kernel binary to reduce the number of kernel
++	  flavors they offer while still offering different usecases.
++
++	  The runtime overhead is negligible with HAVE_STATIC_CALL_INLINE enabled
++	  but if runtime patching is not available for the specific architecture
++	  then the potential overhead should be considered.
++
++	  Interesting if you want the same pre-built kernel should be used for
++	  both Server and Desktop workloads.
+-- 
+2.30.0
+
+From bf3054bb801cf566e65e5f3d060435dbfa4a2f36 Mon Sep 17 00:00:00 2001
+From: "Peter Zijlstra (Intel)" <peterz@infradead.org>
+Date: Mon, 18 Jan 2021 15:12:20 +0100
+Subject: [PATCH] preempt/dynamic: Provide cond_resched() and might_resched()
+ static calls
+
+Provide static calls to control cond_resched() (called in !CONFIG_PREEMPT)
+and might_resched() (called in CONFIG_PREEMPT_VOLUNTARY) to that we
+can override their behaviour when preempt= is overriden.
+
+Since the default behaviour is full preemption, both their calls are
+ignored when preempt= isn't passed.
+
+[fweisbec: branch might_resched() directly to __cond_resched(), only
+           define static calls when PREEMPT_DYNAMIC]
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Signed-off-by: Frederic Weisbecker <frederic@kernel.org>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Link: https://lkml.kernel.org/r/20210118141223.123667-6-frederic@kernel.org
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ include/linux/kernel.h | 23 +++++++++++++++++++----
+ include/linux/sched.h  | 27 ++++++++++++++++++++++++---
+ kernel/sched/core.c    | 16 +++++++++++++---
+ 3 files changed, 56 insertions(+), 10 deletions(-)
+
+diff --git a/include/linux/kernel.h b/include/linux/kernel.h
+index f7902d8c1..cfd3d349f 100644
+--- a/include/linux/kernel.h
++++ b/include/linux/kernel.h
+@@ -15,7 +15,7 @@
+ #include <linux/typecheck.h>
+ #include <linux/printk.h>
+ #include <linux/build_bug.h>
+-
++#include <linux/static_call_types.h>
+ #include <asm/byteorder.h>
+ 
+ #include <uapi/linux/kernel.h>
+@@ -81,11 +81,26 @@ struct pt_regs;
+ struct user;
+ 
+ #ifdef CONFIG_PREEMPT_VOLUNTARY
+-extern int _cond_resched(void);
+-# define might_resched() _cond_resched()
++
++extern int __cond_resched(void);
++# define might_resched() __cond_resched()
++
++#elif defined(CONFIG_PREEMPT_DYNAMIC)
++
++extern int __cond_resched(void);
++
++DECLARE_STATIC_CALL(might_resched, __cond_resched);
++
++static __always_inline void might_resched(void)
++{
++	static_call(might_resched)();
++}
++
+ #else
++
+ # define might_resched() do { } while (0)
+-#endif
++
++#endif /* CONFIG_PREEMPT_* */
+ 
+ #ifdef CONFIG_DEBUG_ATOMIC_SLEEP
+ extern void ___might_sleep(const char *file, int line, int preempt_offset);
+diff --git a/include/linux/sched.h b/include/linux/sched.h
+index e1152227b..2f35594b8 100644
+--- a/include/linux/sched.h
++++ b/include/linux/sched.h
+@@ -1871,11 +1871,32 @@ static inline int test_tsk_need_resched(struct task_struct *tsk)
+  * value indicates whether a reschedule was done in fact.
+  * cond_resched_lock() will drop the spinlock before scheduling,
+  */
+-#ifndef CONFIG_PREEMPTION
+-extern int _cond_resched(void);
++#if !defined(CONFIG_PREEMPTION) || defined(CONFIG_PREEMPT_DYNAMIC)
++extern int __cond_resched(void);
++
++#ifdef CONFIG_PREEMPT_DYNAMIC
++
++DECLARE_STATIC_CALL(cond_resched, __cond_resched);
++
++static __always_inline int _cond_resched(void)
++{
++	return static_call(cond_resched)();
++}
++
+ #else
++
++static inline int _cond_resched(void)
++{
++	return __cond_resched();
++}
++
++#endif /* CONFIG_PREEMPT_DYNAMIC */
++
++#else
++
+ static inline int _cond_resched(void) { return 0; }
+-#endif
++
++#endif /* !defined(CONFIG_PREEMPTION) || defined(CONFIG_PREEMPT_DYNAMIC) */
+ 
+ #define cond_resched() ({			\
+ 	___might_sleep(__FILE__, __LINE__, 0);	\
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index be3a956c2..bc7b00b4b 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -6771,17 +6771,27 @@ SYSCALL_DEFINE0(sched_yield)
+ 	return 0;
+ }
+ 
+-#ifndef CONFIG_PREEMPTION
+-int __sched _cond_resched(void)
++#if !defined(CONFIG_PREEMPTION) || defined(CONFIG_PREEMPT_DYNAMIC)
++int __sched __cond_resched(void)
+ {
+ 	if (should_resched(0)) {
+ 		preempt_schedule_common();
+ 		return 1;
+ 	}
++#ifndef CONFIG_PREEMPT_RCU
+ 	rcu_all_qs();
++#endif
+ 	return 0;
+ }
+-EXPORT_SYMBOL(_cond_resched);
++EXPORT_SYMBOL(__cond_resched);
++#endif
++
++#ifdef CONFIG_PREEMPT_DYNAMIC
++DEFINE_STATIC_CALL_RET0(cond_resched, __cond_resched);
++EXPORT_STATIC_CALL(cond_resched);
++
++DEFINE_STATIC_CALL_RET0(might_resched, __cond_resched);
++EXPORT_STATIC_CALL(might_resched);
+ #endif
+ 
+ /*
+-- 
+2.30.0
+
+From 8c98e8cf723c3ab2ac924b0942dd3b8074f874e5 Mon Sep 17 00:00:00 2001
+From: "Peter Zijlstra (Intel)" <peterz@infradead.org>
+Date: Mon, 18 Jan 2021 15:12:21 +0100
+Subject: [PATCH] preempt/dynamic: Provide preempt_schedule[_notrace]() static
+ calls
+
+Provide static calls to control preempt_schedule[_notrace]()
+(called in CONFIG_PREEMPT) so that we can override their behaviour when
+preempt= is overriden.
+
+Since the default behaviour is full preemption, both their calls are
+initialized to the arch provided wrapper, if any.
+
+[fweisbec: only define static calls when PREEMPT_DYNAMIC, make it less
+           dependent on x86 with __preempt_schedule_func]
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Signed-off-by: Frederic Weisbecker <frederic@kernel.org>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Link: https://lkml.kernel.org/r/20210118141223.123667-7-frederic@kernel.org
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ arch/x86/include/asm/preempt.h | 34 ++++++++++++++++++++++++++--------
+ kernel/sched/core.c            | 12 ++++++++++++
+ 2 files changed, 38 insertions(+), 8 deletions(-)
+
+diff --git a/arch/x86/include/asm/preempt.h b/arch/x86/include/asm/preempt.h
+index 69485ca13..9b12dce9b 100644
+--- a/arch/x86/include/asm/preempt.h
++++ b/arch/x86/include/asm/preempt.h
+@@ -5,6 +5,7 @@
+ #include <asm/rmwcc.h>
+ #include <asm/percpu.h>
+ #include <linux/thread_info.h>
++#include <linux/static_call_types.h>
+ 
+ DECLARE_PER_CPU(int, __preempt_count);
+ 
+@@ -103,16 +104,33 @@ static __always_inline bool should_resched(int preempt_offset)
+ }
+ 
+ #ifdef CONFIG_PREEMPTION
+-  extern asmlinkage void preempt_schedule_thunk(void);
+-# define __preempt_schedule() \
+-	asm volatile ("call preempt_schedule_thunk" : ASM_CALL_CONSTRAINT)
+ 
+-  extern asmlinkage void preempt_schedule(void);
+-  extern asmlinkage void preempt_schedule_notrace_thunk(void);
+-# define __preempt_schedule_notrace() \
+-	asm volatile ("call preempt_schedule_notrace_thunk" : ASM_CALL_CONSTRAINT)
++extern asmlinkage void preempt_schedule(void);
++extern asmlinkage void preempt_schedule_thunk(void);
++
++#define __preempt_schedule_func preempt_schedule_thunk
++
++DECLARE_STATIC_CALL(preempt_schedule, __preempt_schedule_func);
++
++#define __preempt_schedule() \
++do { \
++	__ADDRESSABLE(STATIC_CALL_KEY(preempt_schedule)); \
++	asm volatile ("call " STATIC_CALL_TRAMP_STR(preempt_schedule) : ASM_CALL_CONSTRAINT); \
++} while (0)
++
++extern asmlinkage void preempt_schedule_notrace(void);
++extern asmlinkage void preempt_schedule_notrace_thunk(void);
++
++#define __preempt_schedule_notrace_func preempt_schedule_notrace_thunk
++
++DECLARE_STATIC_CALL(preempt_schedule_notrace, __preempt_schedule_notrace_func);
++
++#define __preempt_schedule_notrace() \
++do { \
++	__ADDRESSABLE(STATIC_CALL_KEY(preempt_schedule_notrace)); \
++	asm volatile ("call " STATIC_CALL_TRAMP_STR(preempt_schedule_notrace) : ASM_CALL_CONSTRAINT); \
++} while (0)
+ 
+-  extern asmlinkage void preempt_schedule_notrace(void);
+ #endif
+ 
+ #endif /* __ASM_PREEMPT_H */
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index bc7b00b4b..cd0c46fbe 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -5251,6 +5251,12 @@ asmlinkage __visible void __sched notrace preempt_schedule(void)
+ NOKPROBE_SYMBOL(preempt_schedule);
+ EXPORT_SYMBOL(preempt_schedule);
+ 
++#ifdef CONFIG_PREEMPT_DYNAMIC
++DEFINE_STATIC_CALL(preempt_schedule, __preempt_schedule_func);
++EXPORT_STATIC_CALL(preempt_schedule);
++#endif
++
++
+ /**
+  * preempt_schedule_notrace - preempt_schedule called by tracing
+  *
+@@ -5303,6 +5309,12 @@ asmlinkage __visible void __sched notrace preempt_schedule_notrace(void)
+ }
+ EXPORT_SYMBOL_GPL(preempt_schedule_notrace);
+ 
++#ifdef CONFIG_PREEMPT_DYNAMIC
++DEFINE_STATIC_CALL(preempt_schedule_notrace, __preempt_schedule_notrace_func);
++EXPORT_STATIC_CALL(preempt_schedule_notrace);
++#endif
++
++
+ #endif /* CONFIG_PREEMPTION */
+ 
+ /*
+-- 
+2.30.0
+
+From 74345075999752a7a9c805fe5e2ec770345cd1ca Mon Sep 17 00:00:00 2001
+From: "Peter Zijlstra (Intel)" <peterz@infradead.org>
+Date: Mon, 18 Jan 2021 15:12:22 +0100
+Subject: [PATCH] preempt/dynamic: Provide irqentry_exit_cond_resched() static
+ call
+
+Provide static call to control IRQ preemption (called in CONFIG_PREEMPT)
+so that we can override its behaviour when preempt= is overriden.
+
+Since the default behaviour is full preemption, its call is
+initialized to provide IRQ preemption when preempt= isn't passed.
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Signed-off-by: Frederic Weisbecker <frederic@kernel.org>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Link: https://lkml.kernel.org/r/20210118141223.123667-8-frederic@kernel.org
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ include/linux/entry-common.h |  4 ++++
+ kernel/entry/common.c        | 10 +++++++++-
+ 2 files changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/include/linux/entry-common.h b/include/linux/entry-common.h
+index ca86a00ab..1401c93b6 100644
+--- a/include/linux/entry-common.h
++++ b/include/linux/entry-common.h
+@@ -2,6 +2,7 @@
+ #ifndef __LINUX_ENTRYCOMMON_H
+ #define __LINUX_ENTRYCOMMON_H
+ 
++#include <linux/static_call_types.h>
+ #include <linux/tracehook.h>
+ #include <linux/syscalls.h>
+ #include <linux/seccomp.h>
+@@ -453,6 +454,9 @@ irqentry_state_t noinstr irqentry_enter(struct pt_regs *regs);
+  * Conditional reschedule with additional sanity checks.
+  */
+ void irqentry_exit_cond_resched(void);
++#ifdef CONFIG_PREEMPT_DYNAMIC
++DECLARE_STATIC_CALL(irqentry_exit_cond_resched, irqentry_exit_cond_resched);
++#endif
+ 
+ /**
+  * irqentry_exit - Handle return from exception that used irqentry_enter()
+diff --git a/kernel/entry/common.c b/kernel/entry/common.c
+index 378341642..84fa7ec28 100644
+--- a/kernel/entry/common.c
++++ b/kernel/entry/common.c
+@@ -393,6 +393,9 @@ void irqentry_exit_cond_resched(void)
+ 			preempt_schedule_irq();
+ 	}
+ }
++#ifdef CONFIG_PREEMPT_DYNAMIC
++DEFINE_STATIC_CALL(irqentry_exit_cond_resched, irqentry_exit_cond_resched);
++#endif
+ 
+ noinstr void irqentry_exit(struct pt_regs *regs, irqentry_state_t state)
+ {
+@@ -419,8 +422,13 @@ noinstr void irqentry_exit(struct pt_regs *regs, irqentry_state_t state)
+ 		}
+ 
+ 		instrumentation_begin();
+-		if (IS_ENABLED(CONFIG_PREEMPTION))
++		if (IS_ENABLED(CONFIG_PREEMPTION)) {
++#ifdef CONFIG_PREEMT_DYNAMIC
++			static_call(irqentry_exit_cond_resched)();
++#else
+ 			irqentry_exit_cond_resched();
++#endif
++		}
+ 		/* Covers both tracing and lockdep */
+ 		trace_hardirqs_on();
+ 		instrumentation_end();
+-- 
+2.30.0
+
+From 4f8a0041162ab74ba5f89ee58f8aad59c4c85d22 Mon Sep 17 00:00:00 2001
+From: "Peter Zijlstra (Intel)" <peterz@infradead.org>
+Date: Mon, 18 Jan 2021 15:12:23 +0100
+Subject: [PATCH] preempt/dynamic: Support dynamic preempt with preempt= boot
+ option
+
+Support the preempt= boot option and patch the static call sites
+accordingly.
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Signed-off-by: Frederic Weisbecker <frederic@kernel.org>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Link: https://lkml.kernel.org/r/20210118141223.123667-9-frederic@kernel.org
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/core.c | 67 ++++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 66 insertions(+), 1 deletion(-)
+
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index cd0c46fbe..0562992bf 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -12,6 +12,7 @@
+ 
+ #include "sched.h"
+ 
++#include <linux/entry-common.h>
+ #include <linux/nospec.h>
+ 
+ #include <linux/kcov.h>
+@@ -5314,9 +5315,73 @@ DEFINE_STATIC_CALL(preempt_schedule_notrace, __preempt_schedule_notrace_func);
+ EXPORT_STATIC_CALL(preempt_schedule_notrace);
+ #endif
+ 
+-
+ #endif /* CONFIG_PREEMPTION */
+ 
++#ifdef CONFIG_PREEMPT_DYNAMIC
++
++/*
++ * SC:cond_resched
++ * SC:might_resched
++ * SC:preempt_schedule
++ * SC:preempt_schedule_notrace
++ * SC:irqentry_exit_cond_resched
++ *
++ *
++ * NONE:
++ *   cond_resched               <- __cond_resched
++ *   might_resched              <- RET0
++ *   preempt_schedule           <- NOP
++ *   preempt_schedule_notrace   <- NOP
++ *   irqentry_exit_cond_resched <- NOP
++ *
++ * VOLUNTARY:
++ *   cond_resched               <- __cond_resched
++ *   might_resched              <- __cond_resched
++ *   preempt_schedule           <- NOP
++ *   preempt_schedule_notrace   <- NOP
++ *   irqentry_exit_cond_resched <- NOP
++ *
++ * FULL:
++ *   cond_resched               <- RET0
++ *   might_resched              <- RET0
++ *   preempt_schedule           <- preempt_schedule
++ *   preempt_schedule_notrace   <- preempt_schedule_notrace
++ *   irqentry_exit_cond_resched <- irqentry_exit_cond_resched
++ */
++static int __init setup_preempt_mode(char *str)
++{
++	if (!strcmp(str, "none")) {
++		static_call_update(cond_resched, __cond_resched);
++		static_call_update(might_resched, (typeof(&__cond_resched)) __static_call_return0);
++		static_call_update(preempt_schedule, (typeof(&preempt_schedule)) NULL);
++		static_call_update(preempt_schedule_notrace, (typeof(&preempt_schedule_notrace)) NULL);
++		static_call_update(irqentry_exit_cond_resched, (typeof(&irqentry_exit_cond_resched)) NULL);
++		pr_info("Dynamic Preempt: %s\n", str);
++	} else if (!strcmp(str, "voluntary")) {
++		static_call_update(cond_resched, __cond_resched);
++		static_call_update(might_resched, __cond_resched);
++		static_call_update(preempt_schedule, (typeof(&preempt_schedule)) NULL);
++		static_call_update(preempt_schedule_notrace, (typeof(&preempt_schedule_notrace)) NULL);
++		static_call_update(irqentry_exit_cond_resched, (typeof(&irqentry_exit_cond_resched)) NULL);
++		pr_info("Dynamic Preempt: %s\n", str);
++	} else if (!strcmp(str, "full")) {
++		static_call_update(cond_resched, (typeof(&__cond_resched)) __static_call_return0);
++		static_call_update(might_resched, (typeof(&__cond_resched)) __static_call_return0);
++		static_call_update(preempt_schedule, __preempt_schedule_func);
++		static_call_update(preempt_schedule_notrace, __preempt_schedule_notrace_func);
++		static_call_update(irqentry_exit_cond_resched, irqentry_exit_cond_resched);
++		pr_info("Dynamic Preempt: %s\n", str);
++	} else {
++		pr_warn("Dynamic Preempt: Unsupported preempt mode %s, default to full\n", str);
++		return 1;
++	}
++	return 0;
++}
++__setup("preempt=", setup_preempt_mode);
++
++#endif /* CONFIG_PREEMPT_DYNAMIC */
++
++
+ /*
+  * This is the entry point to schedule() from kernel preemption
+  * off of irq context.
+-- 
+2.30.0
+
+From 48dd9c490b9402ff7ca0a7ddecd486dba9450a44 Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Fri, 22 Jan 2021 13:01:58 +0100
+Subject: [PATCH] sched: Add /debug/sched_preempt
+
+Add a debugfs file to muck about with the preempt mode at runtime.
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Link: https://lkml.kernel.org/r/YAsGiUYf6NyaTplX@hirez.programming.kicks-ass.net
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/core.c | 135 +++++++++++++++++++++++++++++++++++++++++---
+ 1 file changed, 126 insertions(+), 9 deletions(-)
+
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 0562992bf..c65926641 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -5348,37 +5348,154 @@ EXPORT_STATIC_CALL(preempt_schedule_notrace);
+  *   preempt_schedule_notrace   <- preempt_schedule_notrace
+  *   irqentry_exit_cond_resched <- irqentry_exit_cond_resched
+  */
+-static int __init setup_preempt_mode(char *str)
++
++enum {
++	preempt_dynamic_none = 0,
++	preempt_dynamic_voluntary,
++	preempt_dynamic_full,
++};
++
++static int preempt_dynamic_mode = preempt_dynamic_full;
++
++static int sched_dynamic_mode(const char *str)
+ {
+-	if (!strcmp(str, "none")) {
++	if (!strcmp(str, "none"))
++		return 0;
++
++	if (!strcmp(str, "voluntary"))
++		return 1;
++
++	if (!strcmp(str, "full"))
++		return 2;
++
++	return -1;
++}
++
++static void sched_dynamic_update(int mode)
++{
++	/*
++	 * Avoid {NONE,VOLUNTARY} -> FULL transitions from ever ending up in
++	 * the ZERO state, which is invalid.
++	 */
++	static_call_update(cond_resched, __cond_resched);
++	static_call_update(might_resched, __cond_resched);
++	static_call_update(preempt_schedule, __preempt_schedule_func);
++	static_call_update(preempt_schedule_notrace, __preempt_schedule_notrace_func);
++	static_call_update(irqentry_exit_cond_resched, irqentry_exit_cond_resched);
++
++	switch (mode) {
++	case preempt_dynamic_none:
+ 		static_call_update(cond_resched, __cond_resched);
+ 		static_call_update(might_resched, (typeof(&__cond_resched)) __static_call_return0);
+ 		static_call_update(preempt_schedule, (typeof(&preempt_schedule)) NULL);
+ 		static_call_update(preempt_schedule_notrace, (typeof(&preempt_schedule_notrace)) NULL);
+ 		static_call_update(irqentry_exit_cond_resched, (typeof(&irqentry_exit_cond_resched)) NULL);
+-		pr_info("Dynamic Preempt: %s\n", str);
+-	} else if (!strcmp(str, "voluntary")) {
++		pr_info("Dynamic Preempt: none\n");
++		break;
++
++	case preempt_dynamic_voluntary:
+ 		static_call_update(cond_resched, __cond_resched);
+ 		static_call_update(might_resched, __cond_resched);
+ 		static_call_update(preempt_schedule, (typeof(&preempt_schedule)) NULL);
+ 		static_call_update(preempt_schedule_notrace, (typeof(&preempt_schedule_notrace)) NULL);
+ 		static_call_update(irqentry_exit_cond_resched, (typeof(&irqentry_exit_cond_resched)) NULL);
+-		pr_info("Dynamic Preempt: %s\n", str);
+-	} else if (!strcmp(str, "full")) {
++		pr_info("Dynamic Preempt: voluntary\n");
++		break;
++
++	case preempt_dynamic_full:
+ 		static_call_update(cond_resched, (typeof(&__cond_resched)) __static_call_return0);
+ 		static_call_update(might_resched, (typeof(&__cond_resched)) __static_call_return0);
+ 		static_call_update(preempt_schedule, __preempt_schedule_func);
+ 		static_call_update(preempt_schedule_notrace, __preempt_schedule_notrace_func);
+ 		static_call_update(irqentry_exit_cond_resched, irqentry_exit_cond_resched);
+-		pr_info("Dynamic Preempt: %s\n", str);
+-	} else {
+-		pr_warn("Dynamic Preempt: Unsupported preempt mode %s, default to full\n", str);
++		pr_info("Dynamic Preempt: full\n");
++		break;
++	}
++
++	preempt_dynamic_mode = mode;
++}
++
++static int __init setup_preempt_mode(char *str)
++{
++	int mode = sched_dynamic_mode(str);
++	if (mode < 0) {
++		pr_warn("Dynamic Preempt: unsupported mode: %s\n", str);
+ 		return 1;
+ 	}
++
++	sched_dynamic_update(mode);
+ 	return 0;
+ }
+ __setup("preempt=", setup_preempt_mode);
+ 
++#ifdef CONFIG_SCHED_DEBUG
++
++static ssize_t sched_dynamic_write(struct file *filp, const char __user *ubuf,
++				   size_t cnt, loff_t *ppos)
++{
++	char buf[16];
++	int mode;
++
++	if (cnt > 15)
++		cnt = 15;
++
++	if (copy_from_user(&buf, ubuf, cnt))
++		return -EFAULT;
++
++	buf[cnt] = 0;
++	mode = sched_dynamic_mode(strstrip(buf));
++	if (mode < 0)
++		return mode;
++
++	sched_dynamic_update(mode);
++
++	*ppos += cnt;
++
++	return cnt;
++}
++
++static int sched_dynamic_show(struct seq_file *m, void *v)
++{
++	static const char * preempt_modes[] = {
++		"none", "voluntary", "full"
++	};
++	int i;
++
++	for (i = 0; i < ARRAY_SIZE(preempt_modes); i++) {
++		if (preempt_dynamic_mode == i)
++			seq_puts(m, "(");
++		seq_puts(m, preempt_modes[i]);
++		if (preempt_dynamic_mode == i)
++			seq_puts(m, ")");
++
++		seq_puts(m, " ");
++	}
++
++	seq_puts(m, "\n");
++	return 0;
++}
++
++static int sched_dynamic_open(struct inode *inode, struct file *filp)
++{
++	return single_open(filp, sched_dynamic_show, NULL);
++}
++
++static const struct file_operations sched_dynamic_fops = {
++	.open		= sched_dynamic_open,
++	.write		= sched_dynamic_write,
++	.read		= seq_read,
++	.llseek		= seq_lseek,
++	.release	= single_release,
++};
++
++static __init int sched_init_debug_dynamic(void)
++{
++	debugfs_create_file("sched_preempt", 0644, NULL, NULL, &sched_dynamic_fops);
++	return 0;
++}
++late_initcall(sched_init_debug_dynamic);
++
++#endif /* CONFIG_SCHED_DEBUG */
+ #endif /* CONFIG_PREEMPT_DYNAMIC */
+ 
+ 
+-- 
+2.30.0
+
+From 5e444f1cadde5cf3da2bd7a89631519806ac91f7 Mon Sep 17 00:00:00 2001
+From: Josh Poimboeuf <jpoimboe@redhat.com>
+Date: Wed, 27 Jan 2021 17:18:37 -0600
+Subject: [PATCH] static_call: Allow module use without exposing
+ static_call_key
+
+When exporting static_call_key; with EXPORT_STATIC_CALL*(), the module
+can use static_call_update() to change the function called.  This is
+not desirable in general.
+
+Not exporting static_call_key however also disallows usage of
+static_call(), since objtool needs the key to construct the
+static_call_site.
+
+Solve this by allowing objtool to create the static_call_site using
+the trampoline address when it builds a module and cannot find the
+static_call_key symbol. The module loader will then try and map the
+trampole back to a key before it constructs the normal sites list.
+
+Doing this requires a trampoline -> key associsation, so add another
+magic section that keeps those.
+
+Originally-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Signed-off-by: Josh Poimboeuf <jpoimboe@redhat.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Link: https://lkml.kernel.org/r/20210127231837.ifddpn7rhwdaepiu@treble
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ arch/x86/include/asm/static_call.h      |  7 ++++
+ include/asm-generic/vmlinux.lds.h       |  5 ++-
+ include/linux/static_call.h             | 22 +++++++++-
+ include/linux/static_call_types.h       | 27 +++++++++++-
+ kernel/static_call.c                    | 55 ++++++++++++++++++++++++-
+ tools/include/linux/static_call_types.h | 27 +++++++++++-
+ tools/objtool/check.c                   | 17 +++++++-
+ 7 files changed, 149 insertions(+), 11 deletions(-)
+
+diff --git a/arch/x86/include/asm/static_call.h b/arch/x86/include/asm/static_call.h
+index c37f11999..cbb67b603 100644
+--- a/arch/x86/include/asm/static_call.h
++++ b/arch/x86/include/asm/static_call.h
+@@ -37,4 +37,11 @@
+ #define ARCH_DEFINE_STATIC_CALL_NULL_TRAMP(name)			\
+ 	__ARCH_DEFINE_STATIC_CALL_TRAMP(name, "ret; nop; nop; nop; nop")
+ 
++
++#define ARCH_ADD_TRAMP_KEY(name)					\
++	asm(".pushsection .static_call_tramp_key, \"a\"		\n"	\
++	    ".long " STATIC_CALL_TRAMP_STR(name) " - .		\n"	\
++	    ".long " STATIC_CALL_KEY_STR(name) " - .		\n"	\
++	    ".popsection					\n")
++
+ #endif /* _ASM_STATIC_CALL_H */
+diff --git a/include/asm-generic/vmlinux.lds.h b/include/asm-generic/vmlinux.lds.h
+index b2b3d81b1..b0871e282 100644
+--- a/include/asm-generic/vmlinux.lds.h
++++ b/include/asm-generic/vmlinux.lds.h
+@@ -393,7 +393,10 @@
+ 	. = ALIGN(8);							\
+ 	__start_static_call_sites = .;					\
+ 	KEEP(*(.static_call_sites))					\
+-	__stop_static_call_sites = .;
++	__stop_static_call_sites = .;					\
++	__start_static_call_tramp_key = .;				\
++	KEEP(*(.static_call_tramp_key))					\
++	__stop_static_call_tramp_key = .;
+ 
+ /*
+  * Allow architectures to handle ro_after_init data on their
+diff --git a/include/linux/static_call.h b/include/linux/static_call.h
+index d69dd8b97..85ecc789f 100644
+--- a/include/linux/static_call.h
++++ b/include/linux/static_call.h
+@@ -138,6 +138,12 @@ struct static_call_key {
+ 	};
+ };
+ 
++/* For finding the key associated with a trampoline */
++struct static_call_tramp_key {
++	s32 tramp;
++	s32 key;
++};
++
+ extern void __static_call_update(struct static_call_key *key, void *tramp, void *func);
+ extern int static_call_mod_init(struct module *mod);
+ extern int static_call_text_reserved(void *start, void *end);
+@@ -165,11 +171,18 @@ extern long __static_call_return0(void);
+ #define EXPORT_STATIC_CALL(name)					\
+ 	EXPORT_SYMBOL(STATIC_CALL_KEY(name));				\
+ 	EXPORT_SYMBOL(STATIC_CALL_TRAMP(name))
+-
+ #define EXPORT_STATIC_CALL_GPL(name)					\
+ 	EXPORT_SYMBOL_GPL(STATIC_CALL_KEY(name));			\
+ 	EXPORT_SYMBOL_GPL(STATIC_CALL_TRAMP(name))
+ 
++/* Leave the key unexported, so modules can't change static call targets: */
++#define EXPORT_STATIC_CALL_TRAMP(name)					\
++	EXPORT_SYMBOL(STATIC_CALL_TRAMP(name));				\
++	ARCH_ADD_TRAMP_KEY(name)
++#define EXPORT_STATIC_CALL_TRAMP_GPL(name)				\
++	EXPORT_SYMBOL_GPL(STATIC_CALL_TRAMP(name));			\
++	ARCH_ADD_TRAMP_KEY(name)
++
+ #elif defined(CONFIG_HAVE_STATIC_CALL)
+ 
+ static inline int static_call_init(void) { return 0; }
+@@ -216,11 +229,16 @@ static inline long __static_call_return0(void)
+ #define EXPORT_STATIC_CALL(name)					\
+ 	EXPORT_SYMBOL(STATIC_CALL_KEY(name));				\
+ 	EXPORT_SYMBOL(STATIC_CALL_TRAMP(name))
+-
+ #define EXPORT_STATIC_CALL_GPL(name)					\
+ 	EXPORT_SYMBOL_GPL(STATIC_CALL_KEY(name));			\
+ 	EXPORT_SYMBOL_GPL(STATIC_CALL_TRAMP(name))
+ 
++/* Leave the key unexported, so modules can't change static call targets: */
++#define EXPORT_STATIC_CALL_TRAMP(name)					\
++	EXPORT_SYMBOL(STATIC_CALL_TRAMP(name))
++#define EXPORT_STATIC_CALL_TRAMP_GPL(name)				\
++	EXPORT_SYMBOL_GPL(STATIC_CALL_TRAMP(name))
++
+ #else /* Generic implementation */
+ 
+ static inline int static_call_init(void) { return 0; }
+diff --git a/include/linux/static_call_types.h b/include/linux/static_call_types.h
+index 08f78b1b8..ae5662d36 100644
+--- a/include/linux/static_call_types.h
++++ b/include/linux/static_call_types.h
+@@ -10,6 +10,7 @@
+ #define STATIC_CALL_KEY_PREFIX_STR	__stringify(STATIC_CALL_KEY_PREFIX)
+ #define STATIC_CALL_KEY_PREFIX_LEN	(sizeof(STATIC_CALL_KEY_PREFIX_STR) - 1)
+ #define STATIC_CALL_KEY(name)		__PASTE(STATIC_CALL_KEY_PREFIX, name)
++#define STATIC_CALL_KEY_STR(name)	__stringify(STATIC_CALL_KEY(name))
+ 
+ #define STATIC_CALL_TRAMP_PREFIX	__SCT__
+ #define STATIC_CALL_TRAMP_PREFIX_STR	__stringify(STATIC_CALL_TRAMP_PREFIX)
+@@ -39,17 +40,39 @@ struct static_call_site {
+ 
+ #ifdef CONFIG_HAVE_STATIC_CALL
+ 
++#define __raw_static_call(name)	(&STATIC_CALL_TRAMP(name))
++
++#ifdef CONFIG_HAVE_STATIC_CALL_INLINE
++
+ /*
+  * __ADDRESSABLE() is used to ensure the key symbol doesn't get stripped from
+  * the symbol table so that objtool can reference it when it generates the
+  * .static_call_sites section.
+  */
++#define __STATIC_CALL_ADDRESSABLE(name) \
++	__ADDRESSABLE(STATIC_CALL_KEY(name))
++
+ #define __static_call(name)						\
+ ({									\
+-	__ADDRESSABLE(STATIC_CALL_KEY(name));				\
+-	&STATIC_CALL_TRAMP(name);					\
++	__STATIC_CALL_ADDRESSABLE(name);				\
++	__raw_static_call(name);					\
+ })
+ 
++#else /* !CONFIG_HAVE_STATIC_CALL_INLINE */
++
++#define __STATIC_CALL_ADDRESSABLE(name)
++#define __static_call(name)	__raw_static_call(name)
++
++#endif /* CONFIG_HAVE_STATIC_CALL_INLINE */
++
++#ifdef MODULE
++#define __STATIC_CALL_MOD_ADDRESSABLE(name)
++#define static_call_mod(name)	__raw_static_call(name)
++#else
++#define __STATIC_CALL_MOD_ADDRESSABLE(name) __STATIC_CALL_ADDRESSABLE(name)
++#define static_call_mod(name)	__static_call(name)
++#endif
++
+ #define static_call(name)	__static_call(name)
+ 
+ #else
+diff --git a/kernel/static_call.c b/kernel/static_call.c
+index 0bc11b5ce..6906c6ec4 100644
+--- a/kernel/static_call.c
++++ b/kernel/static_call.c
+@@ -12,6 +12,8 @@
+ 
+ extern struct static_call_site __start_static_call_sites[],
+ 			       __stop_static_call_sites[];
++extern struct static_call_tramp_key __start_static_call_tramp_key[],
++				    __stop_static_call_tramp_key[];
+ 
+ static bool static_call_initialized;
+ 
+@@ -323,10 +325,59 @@ static int __static_call_mod_text_reserved(void *start, void *end)
+ 	return ret;
+ }
+ 
++static unsigned long tramp_key_lookup(unsigned long addr)
++{
++	struct static_call_tramp_key *start = __start_static_call_tramp_key;
++	struct static_call_tramp_key *stop = __stop_static_call_tramp_key;
++	struct static_call_tramp_key *tramp_key;
++
++	for (tramp_key = start; tramp_key != stop; tramp_key++) {
++		unsigned long tramp;
++
++		tramp = (long)tramp_key->tramp + (long)&tramp_key->tramp;
++		if (tramp == addr)
++			return (long)tramp_key->key + (long)&tramp_key->key;
++	}
++
++	return 0;
++}
++
+ static int static_call_add_module(struct module *mod)
+ {
+-	return __static_call_init(mod, mod->static_call_sites,
+-				  mod->static_call_sites + mod->num_static_call_sites);
++	struct static_call_site *start = mod->static_call_sites;
++	struct static_call_site *stop = start + mod->num_static_call_sites;
++	struct static_call_site *site;
++
++	for (site = start; site != stop; site++) {
++		unsigned long addr = (unsigned long)static_call_key(site);
++		unsigned long key;
++
++		/*
++		 * Is the key is exported, 'addr' points to the key, which
++		 * means modules are allowed to call static_call_update() on
++		 * it.
++		 *
++		 * Otherwise, the key isn't exported, and 'addr' points to the
++		 * trampoline so we need to lookup the key.
++		 *
++		 * We go through this dance to prevent crazy modules from
++		 * abusing sensitive static calls.
++		 */
++		if (!kernel_text_address(addr))
++			continue;
++
++		key = tramp_key_lookup(addr);
++		if (!key) {
++			pr_warn("Failed to fixup __raw_static_call() usage at: %ps\n",
++				static_call_addr(site));
++			return -EINVAL;
++		}
++
++		site->key = (key - (long)&site->key) |
++			    (site->key & STATIC_CALL_SITE_FLAGS);
++	}
++
++	return __static_call_init(mod, start, stop);
+ }
+ 
+ static void static_call_del_module(struct module *mod)
+diff --git a/tools/include/linux/static_call_types.h b/tools/include/linux/static_call_types.h
+index 08f78b1b8..ae5662d36 100644
+--- a/tools/include/linux/static_call_types.h
++++ b/tools/include/linux/static_call_types.h
+@@ -10,6 +10,7 @@
+ #define STATIC_CALL_KEY_PREFIX_STR	__stringify(STATIC_CALL_KEY_PREFIX)
+ #define STATIC_CALL_KEY_PREFIX_LEN	(sizeof(STATIC_CALL_KEY_PREFIX_STR) - 1)
+ #define STATIC_CALL_KEY(name)		__PASTE(STATIC_CALL_KEY_PREFIX, name)
++#define STATIC_CALL_KEY_STR(name)	__stringify(STATIC_CALL_KEY(name))
+ 
+ #define STATIC_CALL_TRAMP_PREFIX	__SCT__
+ #define STATIC_CALL_TRAMP_PREFIX_STR	__stringify(STATIC_CALL_TRAMP_PREFIX)
+@@ -39,17 +40,39 @@ struct static_call_site {
+ 
+ #ifdef CONFIG_HAVE_STATIC_CALL
+ 
++#define __raw_static_call(name)	(&STATIC_CALL_TRAMP(name))
++
++#ifdef CONFIG_HAVE_STATIC_CALL_INLINE
++
+ /*
+  * __ADDRESSABLE() is used to ensure the key symbol doesn't get stripped from
+  * the symbol table so that objtool can reference it when it generates the
+  * .static_call_sites section.
+  */
++#define __STATIC_CALL_ADDRESSABLE(name) \
++	__ADDRESSABLE(STATIC_CALL_KEY(name))
++
+ #define __static_call(name)						\
+ ({									\
+-	__ADDRESSABLE(STATIC_CALL_KEY(name));				\
+-	&STATIC_CALL_TRAMP(name);					\
++	__STATIC_CALL_ADDRESSABLE(name);				\
++	__raw_static_call(name);					\
+ })
+ 
++#else /* !CONFIG_HAVE_STATIC_CALL_INLINE */
++
++#define __STATIC_CALL_ADDRESSABLE(name)
++#define __static_call(name)	__raw_static_call(name)
++
++#endif /* CONFIG_HAVE_STATIC_CALL_INLINE */
++
++#ifdef MODULE
++#define __STATIC_CALL_MOD_ADDRESSABLE(name)
++#define static_call_mod(name)	__raw_static_call(name)
++#else
++#define __STATIC_CALL_MOD_ADDRESSABLE(name) __STATIC_CALL_ADDRESSABLE(name)
++#define static_call_mod(name)	__static_call(name)
++#endif
++
+ #define static_call(name)	__static_call(name)
+ 
+ #else
+diff --git a/tools/objtool/check.c b/tools/objtool/check.c
+index 5f8d3eed7..7bd96d681 100644
+--- a/tools/objtool/check.c
++++ b/tools/objtool/check.c
+@@ -502,8 +502,21 @@ static int create_static_call_sections(struct objtool_file *file)
+ 
+ 		key_sym = find_symbol_by_name(file->elf, tmp);
+ 		if (!key_sym) {
+-			WARN("static_call: can't find static_call_key symbol: %s", tmp);
+-			return -1;
++			if (!module) {
++				WARN("static_call: can't find static_call_key symbol: %s", tmp);
++				return -1;
++			}
++
++			/*
++			 * For modules(), the key might not be exported, which
++			 * means the module can make static calls but isn't
++			 * allowed to change them.
++			 *
++			 * In that case we temporarily set the key to be the
++			 * trampoline address.  This is fixed up in
++			 * static_call_add_module().
++			 */
++			key_sym = insn->call_dest;
+ 		}
+ 		free(key_name);
+ 
+-- 
+2.30.0
+
+From 936eba768e7d4701373115977db1dbe954b6f6af Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Mon, 25 Jan 2021 16:26:50 +0100
+Subject: [PATCH] sched: Harden PREEMPT_DYNAMIC
+
+Use the new EXPORT_STATIC_CALL_TRAMP() / static_call_mod() to unexport
+the static_call_key for the PREEMPT_DYNAMIC calls such that modules
+can no longer update these calls.
+
+Having modules change/hi-jack the preemption calls would be horrible.
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ arch/x86/include/asm/preempt.h | 4 ++--
+ include/linux/kernel.h         | 2 +-
+ include/linux/sched.h          | 2 +-
+ kernel/sched/core.c            | 8 ++++----
+ 4 files changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/arch/x86/include/asm/preempt.h b/arch/x86/include/asm/preempt.h
+index 9b12dce9b..0aa96f824 100644
+--- a/arch/x86/include/asm/preempt.h
++++ b/arch/x86/include/asm/preempt.h
+@@ -114,7 +114,7 @@ DECLARE_STATIC_CALL(preempt_schedule, __preempt_schedule_func);
+ 
+ #define __preempt_schedule() \
+ do { \
+-	__ADDRESSABLE(STATIC_CALL_KEY(preempt_schedule)); \
++	__STATIC_CALL_MOD_ADDRESSABLE(preempt_schedule); \
+ 	asm volatile ("call " STATIC_CALL_TRAMP_STR(preempt_schedule) : ASM_CALL_CONSTRAINT); \
+ } while (0)
+ 
+@@ -127,7 +127,7 @@ DECLARE_STATIC_CALL(preempt_schedule_notrace, __preempt_schedule_notrace_func);
+ 
+ #define __preempt_schedule_notrace() \
+ do { \
+-	__ADDRESSABLE(STATIC_CALL_KEY(preempt_schedule_notrace)); \
++	__STATIC_CALL_MOD_ADDRESSABLE(preempt_schedule_notrace); \
+ 	asm volatile ("call " STATIC_CALL_TRAMP_STR(preempt_schedule_notrace) : ASM_CALL_CONSTRAINT); \
+ } while (0)
+ 
+diff --git a/include/linux/kernel.h b/include/linux/kernel.h
+index cfd3d349f..5b7ed6dc9 100644
+--- a/include/linux/kernel.h
++++ b/include/linux/kernel.h
+@@ -93,7 +93,7 @@ DECLARE_STATIC_CALL(might_resched, __cond_resched);
+ 
+ static __always_inline void might_resched(void)
+ {
+-	static_call(might_resched)();
++	static_call_mod(might_resched)();
+ }
+ 
+ #else
+diff --git a/include/linux/sched.h b/include/linux/sched.h
+index 2f35594b8..4d568288a 100644
+--- a/include/linux/sched.h
++++ b/include/linux/sched.h
+@@ -1880,7 +1880,7 @@ DECLARE_STATIC_CALL(cond_resched, __cond_resched);
+ 
+ static __always_inline int _cond_resched(void)
+ {
+-	return static_call(cond_resched)();
++	return static_call_mod(cond_resched)();
+ }
+ 
+ #else
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index c65926641..81e1e1921 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -5254,7 +5254,7 @@ EXPORT_SYMBOL(preempt_schedule);
+ 
+ #ifdef CONFIG_PREEMPT_DYNAMIC
+ DEFINE_STATIC_CALL(preempt_schedule, __preempt_schedule_func);
+-EXPORT_STATIC_CALL(preempt_schedule);
++EXPORT_STATIC_CALL_TRAMP(preempt_schedule);
+ #endif
+ 
+ 
+@@ -5312,7 +5312,7 @@ EXPORT_SYMBOL_GPL(preempt_schedule_notrace);
+ 
+ #ifdef CONFIG_PREEMPT_DYNAMIC
+ DEFINE_STATIC_CALL(preempt_schedule_notrace, __preempt_schedule_notrace_func);
+-EXPORT_STATIC_CALL(preempt_schedule_notrace);
++EXPORT_STATIC_CALL_TRAMP(preempt_schedule_notrace);
+ #endif
+ 
+ #endif /* CONFIG_PREEMPTION */
+@@ -6982,10 +6982,10 @@ EXPORT_SYMBOL(__cond_resched);
+ 
+ #ifdef CONFIG_PREEMPT_DYNAMIC
+ DEFINE_STATIC_CALL_RET0(cond_resched, __cond_resched);
+-EXPORT_STATIC_CALL(cond_resched);
++EXPORT_STATIC_CALL_TRAMP(cond_resched);
+ 
+ DEFINE_STATIC_CALL_RET0(might_resched, __cond_resched);
+-EXPORT_STATIC_CALL(might_resched);
++EXPORT_STATIC_CALL_TRAMP(might_resched);
+ #endif
+ 
+ /*
+-- 
+2.30.0
+

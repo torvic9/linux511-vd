@@ -11,7 +11,7 @@ _kernelname=-vd
 _sub=0
 _rc=rc7
 pkgver=${_basekernel}.${_sub}${_rc}
-pkgrel=1
+pkgrel=11
 _archpatch=20210129
 _prjc="r2"
 _stablequeue=a1028684e3
@@ -44,7 +44,7 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     # bfq fixes
     0009-block-bfq-fixes-and-improvements.patch
     # tip:sched/core
-    0010-tip-sched-core-20210127.patch
+    0010-tip-sched-core-20210205.patch
     # blk-mq fixes
     0011-blk-mq-dont-complete-in-IRQ-use-llist_head.patch
     # sched balance tweaks
@@ -65,6 +65,8 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     0019-drm-amdgpu-correct-read-sclk-for-navi10.patch
     # hrtimer
     0020-hrtick-reprogramming-and-optimization-v1.patch
+    # fix amd performance regression in cpufreq
+    0021-cpufreq-acpi-fix-performance-regression-related-to-scale-invariance.patch
     #
     # futex_wait_multiple
     # 1001-futex-futex_wait_multiple-krisman.patch
@@ -115,7 +117,7 @@ sha256sums=('61b93b9f7251237fa5593eb50d1b5845752c2865ccab28bdb38a18fdafcf2720'
             '1f47d3e3956c41b47656f675a90fad9e318c7133ffe663dc0fd2c9aa0fbfeb3e'
             '5000348583882523ef3c36df27eabf4355e83d0605081a3bf5d4aaa28e518162'
             '9e86bfb28c4c9a30a116f57c24d57cf7488df2755198425522564b4e8f8015e7'
-            'ad4f9dde0acda23826a468241bf962b39149ec288f08fb0b058436649bdd75d4'
+            '6a29b8ca8c91d5391bf30438949d8fe5ec371c16a8c894b50595508c58af6dbb'
             '12fdebdffb9ba9620a012eafba79162d83d13700a47af5b9feef4d91e9600d6f'
             '13acb14484a79496a07f65831686887854c89ed50d662682052fb025d99c5b5e'
             'e7d724ac15daf428aa1e6a03737e5c1d040892d55fda8a66897fcac9323f285c'
@@ -126,6 +128,7 @@ sha256sums=('61b93b9f7251237fa5593eb50d1b5845752c2865ccab28bdb38a18fdafcf2720'
             'd053785a07e7e4ee206bd3a4ac19a10615e80a8ec267149ba7c6e03ee84de61b'
             '0487fd89528c780e05fb2c39c28b4826a5c06fbaea0ea1ebe4cbc433fc83569d'
             'c136216e641aa229946e54488f8149f61e70122dccb2497a7c955674b7ee7eab'
+            'e29577400be466300c124df9a5dde99b1f6e879147172bdeb6cc273f94e863e6'
             '239307e0018ab2405b9afaa7d315ee3352b83819a3c75b65951749b52a3247d2'
             '7fd689f4ec88364d1ac00007e6f1e273ee9b53cae187e0f70e7f810303dc9303'
             'f7a36231b794022d49e53f464d25e48f2eebf6266c2cbe5756c63aa3bf03bae7'

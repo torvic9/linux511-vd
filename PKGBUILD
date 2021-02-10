@@ -62,16 +62,14 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     0018-btrfs-patches-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11-rc/btrfs-patches-v6/0001-btrfs-patches.patch
     # amdgpu
     0019-drm-amdgpu-correct-read-sclk-for-navi10.patch
-    # hrtimer
-    0020-hrtick-reprogramming-and-optimization-v1.patch
+    # better page reclaim by google
+    0020-augmented-page-reclaim.patch
     # fix amd performance regression in cpufreq
     0021-cpufreq-acpi-fix-performance-regression-related-to-scale-invariance.patch
     # Nuvoton nc677x driver
     0022-i2c-nuvoton-nc677x-hwmon-driver-git.patch::https://gitlab.com/CalcProgrammer1/OpenRGB/-/raw/master/OpenRGB.patch
     #
     # futex_wait_multiple
-    # 1001-futex-futex_wait_multiple-krisman.patch
-    # 1001-futex-valve-integ-20201126.patch
     1001-futex-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11-rc/futex-trunk-patches-v2/0001-futex-resync-from-gitlab.collabora.com.patch
     #1002-futex2-stable-511.patch
     #
@@ -120,7 +118,7 @@ sha256sums=('61b93b9f7251237fa5593eb50d1b5845752c2865ccab28bdb38a18fdafcf2720'
             'a881179be827dfee0b10c704fc8e1c501683f61e8041df392b48b51cba215856'
             '12fdebdffb9ba9620a012eafba79162d83d13700a47af5b9feef4d91e9600d6f'
             '9e86bfb28c4c9a30a116f57c24d57cf7488df2755198425522564b4e8f8015e7'
-            '6a29b8ca8c91d5391bf30438949d8fe5ec371c16a8c894b50595508c58af6dbb'
+            'db3b8d090f2b9c537f467eb0b5433127c9272824a7c97ebf3c7b8521ceafb0a9'
             '13acb14484a79496a07f65831686887854c89ed50d662682052fb025d99c5b5e'
             'a652bf7985cd0633ee12e61efb9dd898f28468e93caa852e210923fed92724fb'
             '49b29307ee96f85db5949866fd2f5a76502dd5be7564771febfe57c807b4f740'
@@ -128,7 +126,7 @@ sha256sums=('61b93b9f7251237fa5593eb50d1b5845752c2865ccab28bdb38a18fdafcf2720'
             '1523298b9c29fa80ecc945982b7e450b5a9128054f91bce0fc596141ed3d1df2'
             'd053785a07e7e4ee206bd3a4ac19a10615e80a8ec267149ba7c6e03ee84de61b'
             '0487fd89528c780e05fb2c39c28b4826a5c06fbaea0ea1ebe4cbc433fc83569d'
-            'c136216e641aa229946e54488f8149f61e70122dccb2497a7c955674b7ee7eab'
+            'ca2cd10fc86d3347d98da60e11b8ca02544d62d4da6179b9555fc92cacfb6838'
             'e29577400be466300c124df9a5dde99b1f6e879147172bdeb6cc273f94e863e6'
             'e7d724ac15daf428aa1e6a03737e5c1d040892d55fda8a66897fcac9323f285c'
             '239307e0018ab2405b9afaa7d315ee3352b83819a3c75b65951749b52a3247d2'

@@ -116,7 +116,7 @@ sha256sums=('61b93b9f7251237fa5593eb50d1b5845752c2865ccab28bdb38a18fdafcf2720'
             '1f47d3e3956c41b47656f675a90fad9e318c7133ffe663dc0fd2c9aa0fbfeb3e'
             '5000348583882523ef3c36df27eabf4355e83d0605081a3bf5d4aaa28e518162'
             'a881179be827dfee0b10c704fc8e1c501683f61e8041df392b48b51cba215856'
-            '12fdebdffb9ba9620a012eafba79162d83d13700a47af5b9feef4d91e9600d6f'
+            '18a84957915dd924cbdddfb031954f97e951bd96f5593fb1eb8c73bc4a61bd3f'
             '9e86bfb28c4c9a30a116f57c24d57cf7488df2755198425522564b4e8f8015e7'
             'db3b8d090f2b9c537f467eb0b5433127c9272824a7c97ebf3c7b8521ceafb0a9'
             '13acb14484a79496a07f65831686887854c89ed50d662682052fb025d99c5b5e'
@@ -149,7 +149,7 @@ _key="$HOME/build/keys/vd511-kernel-key.pem"
 _pubkey="$HOME/build/keys/vd511-kernel-pubkey.pem"
 
 # custom clang path
-# export PATH=/opt/clang12/bin:$PATH
+export PATH=/opt/clang12/bin:$PATH
 _clang=0
 
 if [[ ${_clang} -eq 1 ]]; then

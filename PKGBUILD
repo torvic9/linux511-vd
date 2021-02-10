@@ -54,8 +54,6 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     0014-rcu-fixes-next.patch
     # rcu fix prio boost
     0015-rcu-fix-priority-boosting.patch
-    # rcu resched fix
-    0016-rcu-sched-fix-ignored-resched-after-rcu_eqs_enter-v4.patch
     # fs buffer fix
     0017-fs-buffer-revoke-lru-when-trying-to-drop-buffers-v4.patch
     # btrfs patches
@@ -122,7 +120,6 @@ sha256sums=('61b93b9f7251237fa5593eb50d1b5845752c2865ccab28bdb38a18fdafcf2720'
             '13acb14484a79496a07f65831686887854c89ed50d662682052fb025d99c5b5e'
             'a652bf7985cd0633ee12e61efb9dd898f28468e93caa852e210923fed92724fb'
             '49b29307ee96f85db5949866fd2f5a76502dd5be7564771febfe57c807b4f740'
-            '9b69afe30b539385c925cf1c670270cfbd80d926c1f800b1461f37e703981e36'
             '1523298b9c29fa80ecc945982b7e450b5a9128054f91bce0fc596141ed3d1df2'
             'd053785a07e7e4ee206bd3a4ac19a10615e80a8ec267149ba7c6e03ee84de61b'
             '0487fd89528c780e05fb2c39c28b4826a5c06fbaea0ea1ebe4cbc433fc83569d'

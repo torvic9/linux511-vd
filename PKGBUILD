@@ -11,7 +11,7 @@ _kernelname=-vd
 _sub=0
 _rc=rc7
 pkgver=${_basekernel}.${_sub}${_rc}
-pkgrel=2
+pkgrel=21
 _archpatch=20210129
 _prjc="r2"
 _stablequeue=a1028684e3
@@ -100,9 +100,9 @@ validpgpkeys=(
 )
 
 sha256sums=('61b93b9f7251237fa5593eb50d1b5845752c2865ccab28bdb38a18fdafcf2720'
-            '29dd0f29a8001f9cf1062ee78e1e84ad7845fa0bd319dcab7ab9c5c7cb74c07c'
-            '7d5297a9445f6e89c3d5df0718f7a2e4bf9c3b0c0b86ea118ea961883cb1e8d2'
-            '09c81b7a8a74f7c4bcd775f28368a1d2bcae4792a7972dd7b728d132b0f04295'
+            '17f421009acc3ea17e53e142d373ddb10394571068f5993588a33e90dd5ead2a'
+            '22d13eafd7816579a4b3cdc20216d433246ecbf22a5098036211da4ddbae10cf'
+            '6f4d0e174b1036a2aca5a828c50461aaffa8d7c602985dab1ac7b510a359bddb'
             'ab010dc5ef6ce85d352956e5996d242246ecd0912b30f0b72025c38eadff8cd5'
             '8f357fab1c5b3e81240b543a6643fdbca1d8591f5dd18bc18e38ae992d78944c'
             'f8be7257633cdec954b220feadebe60af3f7c7e6c6e9c0a140fe339856d42af3'
@@ -146,7 +146,7 @@ _key="$HOME/build/keys/vd511-kernel-key.pem"
 _pubkey="$HOME/build/keys/vd511-kernel-pubkey.pem"
 
 # custom clang path
-export PATH=/opt/clang12/bin:$PATH
+# export PATH=/opt/clang12/bin:$PATH
 _clang=0
 
 if [[ ${_clang} -eq 1 ]]; then

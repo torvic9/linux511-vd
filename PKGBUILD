@@ -81,7 +81,7 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     2005-tune-cpufreq-ondemand-settings.patch
     2006-optimise-kernel-and-module-compression.patch
     # ntfs3 driver
-    2007-ntfs-rw-gpl-driver-implementation-by-paragon-v19.patch
+    2007-ntfs-rw-gpl-driver-implementation-by-paragon-v21.patch
     #
     # Project C (BMQ+PDS)
     # 3001-projectc510-${_prjc}-orig.patch::https://gitlab.com/alfredchen/linux-prjc/uploads/cda220f104bd6e07ea6fefa86c709dbe/prjc_v5.10-r2.patch
@@ -133,7 +133,7 @@ sha256sums=('61b93b9f7251237fa5593eb50d1b5845752c2865ccab28bdb38a18fdafcf2720'
             '4c0beb1f181e7ee22e978f447aaccc3bd7f326e861a5afb5798922b1e7efc2ec'
             '02d2c0e6b2459d4dbd6d4cecb3b269545a78b86cc9d2d3a0fda80bb3c3ee7604'
             'a231aebaa262c60f5f0151819db4b06e92986d5c81e8e0a90e7089a0ac9d454c'
-            '4c21cd75dd5a7c2bb595fe9b409f310fdbd430707843588f6d73df1a289c01a2')
+            '24a024268e8ac2548078ad7ea3445a2331d21df6eb01f5caf9b1b42caf4241bb')
 
 export KBUILD_BUILD_USER=$pkgbase
 export KBUILD_BUILD_HOST=eos
@@ -146,7 +146,7 @@ _key="$HOME/build/keys/vd511-kernel-key.pem"
 _pubkey="$HOME/build/keys/vd511-kernel-pubkey.pem"
 
 # custom clang path
-export PATH=/opt/clang12/bin:$PATH
+# export PATH=/opt/clang12/bin:$PATH
 _clang=0
 
 if [[ ${_clang} -eq 1 ]]; then

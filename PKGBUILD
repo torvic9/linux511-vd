@@ -9,9 +9,9 @@ pkgname=('linux511-vd' 'linux511-vd-headers')
 _basekernel=5.11
 _kernelname=-vd
 _sub=0
-_rc=rc7
-pkgver=${_basekernel}.${_sub}${_rc}
-pkgrel=21
+#_rc=rc7
+pkgver=${_basekernel}.${_sub}
+pkgrel=1
 _archpatch=20210129
 _prjc="r2"
 _stablequeue=a1028684e3
@@ -20,8 +20,8 @@ url="http://www.kernel.org/"
 license=('GPL2')
 makedepends=('xmlto' 'docbook-xsl' 'kmod' 'inetutils' 'bc' 'elfutils' 'git' 'libelf')
 options=('!strip')
-source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
-    #https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver}.tar.{xz,sign}
+source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver/.${_sub}/}.tar.{xz,sign}
+    #https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     # the main kernel config files
     'config.x86_64' 'config.x270' 'config.zen2' 'x509.genkey' "${pkgbase}.preset"
     #
@@ -54,18 +54,16 @@ source=(https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     0014-rcu-fixes-next.patch
     # rcu fix prio boost
     0015-rcu-fix-priority-boosting.patch
+    # amdgpu
+    0016-drm-amdgpu-correct-read-sclk-for-navi10.patch
     # fs buffer fix
     0017-fs-buffer-revoke-lru-when-trying-to-drop-buffers-v4.patch
     # btrfs patches
-    0018-btrfs-patches-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11-rc/btrfs-patches-v6/0001-btrfs-patches.patch
-    # amdgpu
-    0019-drm-amdgpu-correct-read-sclk-for-navi10.patch
+    0018-btrfs-patches-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11-rc/btrfs-patches-v7/0001-btrfs-patches.patch
     # better page reclaim by google
-    0020-augmented-page-reclaim.patch
-    # fix amd performance regression in cpufreq
-    0021-cpufreq-acpi-fix-performance-regression-related-to-scale-invariance.patch
+    0019-augmented-page-reclaim.patch
     # Nuvoton nc677x driver
-    0022-i2c-nuvoton-nc677x-hwmon-driver-git.patch::https://gitlab.com/CalcProgrammer1/OpenRGB/-/raw/master/OpenRGB.patch
+    0020-i2c-nuvoton-nc677x-hwmon-driver-git.patch::https://gitlab.com/CalcProgrammer1/OpenRGB/-/raw/master/OpenRGB.patch
     #
     # futex_wait_multiple
     1001-futex-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11-rc/futex-trunk-patches-v2/0001-futex-resync-from-gitlab.collabora.com.patch
@@ -99,7 +97,8 @@ validpgpkeys=(
   '647F28654894E3BD457199BE38DBBDC86092693E'  # Greg Kroah-Hartman
 )
 
-sha256sums=('61b93b9f7251237fa5593eb50d1b5845752c2865ccab28bdb38a18fdafcf2720'
+sha256sums=('04f07b54f0d40adfab02ee6cbd2a942c96728d87c1ef9e120d0cb9ba3fe067b4'
+            'SKIP'
             '17f421009acc3ea17e53e142d373ddb10394571068f5993588a33e90dd5ead2a'
             '22d13eafd7816579a4b3cdc20216d433246ecbf22a5098036211da4ddbae10cf'
             '6f4d0e174b1036a2aca5a828c50461aaffa8d7c602985dab1ac7b510a359bddb'
@@ -120,11 +119,10 @@ sha256sums=('61b93b9f7251237fa5593eb50d1b5845752c2865ccab28bdb38a18fdafcf2720'
             '13acb14484a79496a07f65831686887854c89ed50d662682052fb025d99c5b5e'
             'a652bf7985cd0633ee12e61efb9dd898f28468e93caa852e210923fed92724fb'
             '49b29307ee96f85db5949866fd2f5a76502dd5be7564771febfe57c807b4f740'
-            '1523298b9c29fa80ecc945982b7e450b5a9128054f91bce0fc596141ed3d1df2'
-            'd053785a07e7e4ee206bd3a4ac19a10615e80a8ec267149ba7c6e03ee84de61b'
             '0487fd89528c780e05fb2c39c28b4826a5c06fbaea0ea1ebe4cbc433fc83569d'
+            '1523298b9c29fa80ecc945982b7e450b5a9128054f91bce0fc596141ed3d1df2'
+            'd138a6a6c627b371533e0d6918e5c3c28c33336d6c06b91c97e8032aec57a68a'
             'ca2cd10fc86d3347d98da60e11b8ca02544d62d4da6179b9555fc92cacfb6838'
-            'e29577400be466300c124df9a5dde99b1f6e879147172bdeb6cc273f94e863e6'
             'e7d724ac15daf428aa1e6a03737e5c1d040892d55fda8a66897fcac9323f285c'
             '239307e0018ab2405b9afaa7d315ee3352b83819a3c75b65951749b52a3247d2'
             '7fd689f4ec88364d1ac00007e6f1e273ee9b53cae187e0f70e7f810303dc9303'
@@ -170,7 +168,7 @@ TN=$(tput sgr0)
 
 prepare() {
 
-  cd "${srcdir}/linux-${_basekernel}-${_rc}"
+  cd "${srcdir}/linux-${_basekernel}"
 
   echo "-${_kernelname/-/}" > localversion.10-pkgname
   echo "-${pkgrel}" > localversion.20-pkgrel
@@ -228,7 +226,7 @@ prepare() {
 }
 
 build() {
-  cd "${srcdir}/linux-${_basekernel}-${_rc}"
+  cd "${srcdir}/linux-${_basekernel}"
 
   # copy pgo profile data
   # cp $srcdir/vmlinux.profdata ./
@@ -247,7 +245,7 @@ package_linux511-vd() {
   provides=(VIRTUALBOX-GUEST-MODULES)
   replaces=(linux511-vd-virtualbox-guest-modules)
 
-  cd "${srcdir}/linux-${_basekernel}-${_rc}"
+  cd "${srcdir}/linux-${_basekernel}"
 
   local kernver="$(<version)"
   local modulesdir="$pkgdir/usr/lib/modules/$kernver"
@@ -286,7 +284,7 @@ package_linux511-vd() {
 package_linux511-vd-headers() {
   pkgdesc="Header files and scripts for building modules for ${pkgbase/linux/Linux} vd kernel"
 
-  cd "${srcdir}/linux-${_basekernel}-${_rc}"
+  cd "${srcdir}/linux-${_basekernel}"
   local kernver="$(<version)"
   local _builddir="${pkgdir}/usr/lib/modules/${kernver}/build"
 

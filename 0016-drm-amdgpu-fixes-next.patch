@@ -1,0 +1,102 @@
+From 673da94cb85cf4e0a7b52fe284eec8a4eb98d271 Mon Sep 17 00:00:00 2001
+From: "Emily.Deng" <Emily.Deng@amd.com>
+Date: Tue, 5 Jan 2021 11:21:25 +0800
+Subject: drm/amdgpu: Correct the read sclk for navi10
+
+According to hw, after navi10,it runs in dfll mode, and should
+read sclk from AverageGfxclkFrequency.
+
+Signed-off-by: Emily.Deng <Emily.Deng@amd.com>
+Acked-by: Alex Deucher <alexander.deucher@amd.com>
+Reviewed-by: Evan Quan <evan.quan@amd.com>
+Signed-off-by: Alex Deucher <alexander.deucher@amd.com>
+---
+ drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c b/drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c
+index 51e83123f72a1..7ebf9588983f4 100644
+--- a/drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c
++++ b/drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c
+@@ -1673,7 +1673,7 @@ static int navi10_read_sensor(struct smu_context *smu,
+ 		*size = 4;
+ 		break;
+ 	case AMDGPU_PP_SENSOR_GFX_SCLK:
+-		ret = navi10_get_current_clk_freq_by_table(smu, SMU_GFXCLK, (uint32_t *)data);
++		ret = navi10_get_smu_metrics_data(smu, METRICS_AVERAGE_GFXCLK, (uint32_t *)data);
+ 		*(uint32_t *)data *= 100;
+ 		*size = 4;
+ 		break;
+-- 
+cgit 1.2.3-1.el7
+
+From b131c363c8a37815e5c7d748883f7d3e1d8e40c2 Mon Sep 17 00:00:00 2001
+From: Ramesh Errabolu <Ramesh.Errabolu@amd.com>
+Date: Wed, 27 Jan 2021 21:34:22 -0600
+Subject: drm/amdgpu: Limit the maximum size of contiguous VRAM that can be
+ encapsulated by an instance of DRM memory node
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+[Why]
+Enable 1:1 mapping between VRAM of a DRM node and a scatterlist node
+
+[How]
+Ensure construction of DRM node to not exceed specified limit
+
+Reviewed-by: Christian König <christian.koenig@amd.com>
+Signed-off-by: Ramesh Errabolu <Ramesh.Errabolu@amd.com>
+Signed-off-by: Alex Deucher <alexander.deucher@amd.com>
+---
+ drivers/gpu/drm/amd/amdgpu/amdgpu_vram_mgr.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/gpu/drm/amd/amdgpu/amdgpu_vram_mgr.c b/drivers/gpu/drm/amd/amdgpu/amdgpu_vram_mgr.c
+index d2de2a720a3d8..c89b66bb70e2e 100644
+--- a/drivers/gpu/drm/amd/amdgpu/amdgpu_vram_mgr.c
++++ b/drivers/gpu/drm/amd/amdgpu/amdgpu_vram_mgr.c
+@@ -473,6 +473,9 @@ static int amdgpu_vram_mgr_new(struct ttm_resource_manager *man,
+ 	for (i = 0; pages_left >= pages_per_node; ++i) {
+ 		unsigned long pages = rounddown_pow_of_two(pages_left);
+ 
++		/* Limit maximum size to 2GB due to SG table limitations */
++		pages = min(pages, (2UL << (30 - PAGE_SHIFT)));
++
+ 		r = drm_mm_insert_node_in_range(mm, &nodes[i], pages,
+ 						pages_per_node, 0,
+ 						place->fpfn, lpfn,
+-- 
+cgit 1.2.3-1.el7
+
+From 006cc1a213cf9ff3d1307ff2d5c51e6c8d62a758 Mon Sep 17 00:00:00 2001
+From: Jiawei Gu <Jiawei.Gu@amd.com>
+Date: Fri, 5 Feb 2021 17:45:18 +0800
+Subject: drm/amdgpu: extend MAX_KIQ_REG_TRY to 1000
+
+Extend retry times of KIQ to avoid starvation situation caused by
+long time full access of GPU by other VFs.
+
+Signed-off-by: Jiawei Gu <Jiawei.Gu@amd.com>
+Reviewed-by: Emily.Deng <Emily.Deng@amd.com>
+Signed-off-by: Alex Deucher <alexander.deucher@amd.com>
+---
+ drivers/gpu/drm/amd/amdgpu/amdgpu.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/amd/amdgpu/amdgpu.h b/drivers/gpu/drm/amd/amdgpu/amdgpu.h
+index 9717cb43eb263..86452f4f3c82e 100644
+--- a/drivers/gpu/drm/amd/amdgpu/amdgpu.h
++++ b/drivers/gpu/drm/amd/amdgpu/amdgpu.h
+@@ -287,7 +287,7 @@ enum amdgpu_kiq_irq {
+ 
+ #define MAX_KIQ_REG_WAIT       5000 /* in usecs, 5ms */
+ #define MAX_KIQ_REG_BAILOUT_INTERVAL   5 /* in msecs, 5ms */
+-#define MAX_KIQ_REG_TRY 80 /* 20 -> 80 */
++#define MAX_KIQ_REG_TRY 1000
+ 
+ int amdgpu_device_ip_set_clockgating_state(void *dev,
+ 					   enum amd_ip_block_type block_type,
+-- 
+cgit 1.2.3-1.el7
+

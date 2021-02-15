@@ -11,7 +11,7 @@ _kernelname=-vd
 _sub=0
 #_rc=rc7
 pkgver=${_basekernel}.${_sub}
-pkgrel=1
+pkgrel=1.1
 _archpatch=20210129
 _prjc="r2"
 _stablequeue=a1028684e3
@@ -55,7 +55,7 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver/.${_sub}/}.t
     # rcu fix prio boost
     0015-rcu-fix-priority-boosting.patch
     # amdgpu
-    0016-drm-amdgpu-correct-read-sclk-for-navi10.patch
+    0016-drm-amdgpu-fixes-next.patch
     # fs buffer fix
     0017-fs-buffer-revoke-lru-when-trying-to-drop-buffers-v4.patch
     # btrfs patches
@@ -119,7 +119,7 @@ sha256sums=('04f07b54f0d40adfab02ee6cbd2a942c96728d87c1ef9e120d0cb9ba3fe067b4'
             '13acb14484a79496a07f65831686887854c89ed50d662682052fb025d99c5b5e'
             'a652bf7985cd0633ee12e61efb9dd898f28468e93caa852e210923fed92724fb'
             '49b29307ee96f85db5949866fd2f5a76502dd5be7564771febfe57c807b4f740'
-            '0487fd89528c780e05fb2c39c28b4826a5c06fbaea0ea1ebe4cbc433fc83569d'
+            '1922dca263ce9f9790fd37e8ead35e32eea0df0391b1d83c6dcef911411d807a'
             '1523298b9c29fa80ecc945982b7e450b5a9128054f91bce0fc596141ed3d1df2'
             'd138a6a6c627b371533e0d6918e5c3c28c33336d6c06b91c97e8032aec57a68a'
             'ca2cd10fc86d3347d98da60e11b8ca02544d62d4da6179b9555fc92cacfb6838'

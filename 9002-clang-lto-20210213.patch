@@ -1,4 +1,4 @@
-From 7c440079d2986e58b8b0cc29dfc789f108420789 Mon Sep 17 00:00:00 2001
+From 7565463207c32b0632973e815ea082271cbecda7 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Wed, 13 Jan 2021 15:23:11 -0800
 Subject: [PATCH] x86/sgx: Fix the return type of sgx_init()
@@ -63,96 +63,9 @@ index c519fc5f6..8df81a3ed 100644
  
  device_initcall(sgx_init);
 -- 
-2.30.0
+2.30.1
 
-From 96402ca0f3462ff0d2935f72860b795fe6d7e922 Mon Sep 17 00:00:00 2001
-From: Arnd Bergmann <arnd@arndb.de>
-Date: Wed, 30 Dec 2020 16:40:40 +0100
-Subject: [PATCH] mm/mremap: fix BUILD_BUG_ON() error in get_extent
-
-clang cannt evaluate this function argument at compile time
-when the function is not inlined, which leads to a link
-time failure:
-
-ld.lld: error: undefined symbol: __compiletime_assert_414
->>> referenced by mremap.c
->>>               mremap.o:(get_extent) in archive mm/built-in.a
-
-Mark the function as __always_inline to avoid it.
-
-Fixes: 9ad9718bfa41 ("mm/mremap: calculate extent in one place")
-Signed-off-by: Arnd Bergmann <arnd@arndb.de>
-Tested-by: Sedat Dilek <sedat.dilek@gmail.com>
-Reviewed-by: Nathan Chancellor <natechancellor@gmail.com>
-Signed-off-by: torvic9 <torvic9@mailbox.org>
----
- mm/mremap.c | 5 +++--
- 1 file changed, 3 insertions(+), 2 deletions(-)
-
-diff --git a/mm/mremap.c b/mm/mremap.c
-index f55432028..aa63bfd3c 100644
---- a/mm/mremap.c
-+++ b/mm/mremap.c
-@@ -336,8 +336,9 @@ enum pgt_entry {
-  * valid. Else returns a smaller extent bounded by the end of the source and
-  * destination pgt_entry.
-  */
--static unsigned long get_extent(enum pgt_entry entry, unsigned long old_addr,
--			unsigned long old_end, unsigned long new_addr)
-+static __always_inline unsigned long get_extent(enum pgt_entry entry,
-+			unsigned long old_addr, unsigned long old_end,
-+			unsigned long new_addr)
- {
- 	unsigned long next, extent, mask, size;
- 
--- 
-2.30.0
-
-From 53fc253cde1ba9a37df888e54a563f38f04af2f1 Mon Sep 17 00:00:00 2001
-From: Arnd Bergmann <arnd@arndb.de>
-Date: Thu, 7 Jan 2021 23:34:15 +0100
-Subject: [PATCH] x86: efi: avoid BUILD_BUG_ON() for non-constant p4d_index
-
-When 5-level page tables are enabled, clang triggers a BUILD_BUG_ON():
-
-x86_64-linux-ld: arch/x86/platform/efi/efi_64.o: in function `efi_sync_low_kernel_mappings':
-efi_64.c:(.text+0x22c): undefined reference to `__compiletime_assert_354'
-
-Use the same method as in commit c65e774fb3f6 ("x86/mm: Make PGDIR_SHIFT
-and PTRS_PER_P4D variable") and change it to MAYBE_BUILD_BUG_ON(),
-so it only triggers for constant input.
-
-[vd: context fix]
-
-Signed-off-by: Arnd Bergmann <arnd@arndb.de>
-Tested-by: Nathan Chancellor <natechancellor@gmail.com>
-Reviewed-by: Nathan Chancellor <natechancellor@gmail.com>
-Acked-by: Ard Biesheuvel <ardb@kernel.org>
-Link: https://github.com/ClangBuiltLinux/linux/issues/256
-Signed-off-by: torvic9 <torvic9@mailbox.org>
----
- arch/x86/platform/efi/efi_64.c | 4 ++--
- 1 file changed, 2 insertions(+), 2 deletions(-)
-
-diff --git a/arch/x86/platform/efi/efi_64.c b/arch/x86/platform/efi/efi_64.c
-index e1e8d4e3a..62bb1616b 100644
---- a/arch/x86/platform/efi/efi_64.c
-+++ b/arch/x86/platform/efi/efi_64.c
-@@ -137,8 +137,8 @@ void efi_sync_low_kernel_mappings(void)
-	 * We share all the PUD entries apart from those that map the
-	 * EFI regions. Copy around them.
-	 */
--	BUILD_BUG_ON((EFI_VA_START & ~PUD_MASK) != 0);
--	BUILD_BUG_ON((EFI_VA_END & ~PUD_MASK) != 0);
-+	MAYBE_BUILD_BUG_ON((EFI_VA_START & ~PUD_MASK) != 0);
-+	MAYBE_BUILD_BUG_ON((EFI_VA_END & ~PUD_MASK) != 0);
-
-	p4d_efi = p4d_offset(pgd_efi, EFI_VA_END);
-	p4d_k = p4d_offset(pgd_k, EFI_VA_END);
--- 
-2.30.0
-
-From a7483c291f3137be4e9767f62ccc8a22a1a6c54e Mon Sep 17 00:00:00 2001
+From b996f3496048bdeff407e4c6afca5d502d6976bf Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Fri, 25 Sep 2020 16:36:45 -0700
 Subject: [PATCH] tracing: move function tracer options to Kconfig
@@ -175,10 +88,10 @@ Signed-off-by: torvic9 <torvic9@mailbox.org>
  3 files changed, 26 insertions(+), 16 deletions(-)
 
 diff --git a/Makefile b/Makefile
-index f5842126e..a856d7ca2 100644
+index ade44ac4c..948f62b73 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -851,12 +851,8 @@ KBUILD_CFLAGS += $(DEBUG_CFLAGS)
+@@ -852,12 +852,8 @@ KBUILD_CFLAGS += $(DEBUG_CFLAGS)
  export DEBUG_CFLAGS
  
  ifdef CONFIG_FUNCTION_TRACER
@@ -193,7 +106,7 @@ index f5842126e..a856d7ca2 100644
    ifdef CONFIG_HAVE_NOP_MCOUNT
      ifeq ($(call cc-option-yn, -mnop-mcount),y)
        CC_FLAGS_FTRACE	+= -mnop-mcount
-@@ -864,6 +860,12 @@ ifdef CONFIG_FTRACE_MCOUNT_RECORD
+@@ -865,6 +861,12 @@ ifdef CONFIG_FTRACE_MCOUNT_RECORD
      endif
    endif
  endif
@@ -206,7 +119,7 @@ index f5842126e..a856d7ca2 100644
  ifdef CONFIG_HAVE_FENTRY
    ifeq ($(call cc-option-yn, -mfentry),y)
      CC_FLAGS_FTRACE	+= -mfentry
-@@ -873,12 +875,6 @@ endif
+@@ -874,12 +876,6 @@ endif
  export CC_FLAGS_FTRACE
  KBUILD_CFLAGS	+= $(CC_FLAGS_FTRACE) $(CC_FLAGS_USING)
  KBUILD_AFLAGS	+= $(CC_FLAGS_USING)
@@ -271,9 +184,9 @@ index 4c058f12d..22654a463 100644
  ifdef CONFIG_STACK_VALIDATION
  ifneq ($(SKIP_STACK_VALIDATION),1)
 -- 
-2.30.0
+2.30.1
 
-From ff9544372677beb4bba907b6242bdfd10f912486 Mon Sep 17 00:00:00 2001
+From 587009a91b3155edf3a7a212460897f0caf51bb0 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Fri, 6 Mar 2020 14:14:03 -0800
 Subject: [PATCH] kbuild: add support for Clang LTO
@@ -328,10 +241,10 @@ Signed-off-by: torvic9 <torvic9@mailbox.org>
  7 files changed, 173 insertions(+), 18 deletions(-)
 
 diff --git a/Makefile b/Makefile
-index a856d7ca2..c57a8605d 100644
+index 948f62b73..08e056b06 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -893,6 +893,21 @@ KBUILD_CFLAGS	+= $(CC_FLAGS_SCS)
+@@ -894,6 +894,21 @@ KBUILD_CFLAGS	+= $(CC_FLAGS_SCS)
  export CC_FLAGS_SCS
  endif
  
@@ -353,7 +266,7 @@ index a856d7ca2..c57a8605d 100644
  ifdef CONFIG_DEBUG_FORCE_FUNCTION_ALIGN_32B
  KBUILD_CFLAGS += -falign-functions=32
  endif
-@@ -1479,7 +1494,7 @@ MRPROPER_FILES += include/config include/generated          \
+@@ -1474,7 +1489,7 @@ MRPROPER_FILES += include/config include/generated          \
  		  *.spec
  
  # Directories & files removed with 'make distclean'
@@ -362,7 +275,7 @@ index a856d7ca2..c57a8605d 100644
  
  # clean - Delete most, but leave enough to build external modules
  #
-@@ -1725,7 +1740,7 @@ PHONY += compile_commands.json
+@@ -1720,7 +1735,7 @@ PHONY += compile_commands.json
  
  clean-dirs := $(KBUILD_EXTMOD)
  clean: rm-files := $(KBUILD_EXTMOD)/Module.symvers $(KBUILD_EXTMOD)/modules.nsdeps \
@@ -474,7 +387,7 @@ index 24862d15f..5ed3dead1 100644
  	bool
  	help
 diff --git a/include/asm-generic/vmlinux.lds.h b/include/asm-generic/vmlinux.lds.h
-index b2b3d81b1..8988a2e44 100644
+index b97c628ad..88177d3c7 100644
 --- a/include/asm-generic/vmlinux.lds.h
 +++ b/include/asm-generic/vmlinux.lds.h
 @@ -90,15 +90,18 @@
@@ -656,9 +569,9 @@ index 6eded325c..596507573 100755
  objtool_link vmlinux.o
  
 -- 
-2.30.0
+2.30.1
 
-From 08bedeccedb534ee0630fbfd13be625cb90b7d60 Mon Sep 17 00:00:00 2001
+From 56aaa9792ae0f61ab2d936d0df50aac3df5caa95 Mon Sep 17 00:00:00 2001
 From: Alexander Lobakin <alobakin@pm.me>
 Date: Thu, 21 Jan 2021 18:45:55 +0000
 Subject: [PATCH] kbuild: prevent CC_FLAGS_LTO self-bloating on recursive
@@ -679,10 +592,10 @@ Signed-off-by: torvic9 <torvic9@mailbox.org>
  1 file changed, 2 insertions(+), 2 deletions(-)
 
 diff --git a/Makefile b/Makefile
-index c57a8605d..8615ba049 100644
+index 08e056b06..621b61f37 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -895,10 +895,10 @@ endif
+@@ -896,10 +896,10 @@ endif
  
  ifdef CONFIG_LTO_CLANG
  ifdef CONFIG_LTO_CLANG_THIN
@@ -696,9 +609,9 @@ index c57a8605d..8615ba049 100644
  CC_FLAGS_LTO	+= -fvisibility=hidden
  endif
 -- 
-2.30.0
+2.30.1
 
-From 33eedf0bac25e20dd483622e78b0e0e7681df597 Mon Sep 17 00:00:00 2001
+From 7e63df7691ed3a8fc5b9a26710b73694cc972181 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Fri, 6 Mar 2020 14:19:09 -0800
 Subject: [PATCH] kbuild: lto: fix module versioning
@@ -735,10 +648,10 @@ index d01cda8e1..44e349918 100644
  *.tar
  *.xz
 diff --git a/Makefile b/Makefile
-index 8615ba049..a02710050 100644
+index 621b61f37..716b73770 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -1837,7 +1837,8 @@ clean: $(clean-dirs)
+@@ -1832,7 +1832,8 @@ clean: $(clean-dirs)
  		-o -name '.tmp_*.o.*' \
  		-o -name '*.c.[012]*.*' \
  		-o -name '*.ll' \
@@ -919,9 +832,9 @@ index 596507573..78e55fe72 100755
  	rm -f System.map
  	rm -f vmlinux
 -- 
-2.30.0
+2.30.1
 
-From 86ceb2c892bbe844e725dbbb97023f5a69d49c37 Mon Sep 17 00:00:00 2001
+From 63e69b23908ba897ca3e878e2a06c7ba4bdd1a6f Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Wed, 4 Dec 2019 15:57:39 -0800
 Subject: [PATCH] kbuild: lto: limit inlining
@@ -944,10 +857,10 @@ Signed-off-by: torvic9 <torvic9@mailbox.org>
  1 file changed, 3 insertions(+)
 
 diff --git a/Makefile b/Makefile
-index a02710050..ee07376e0 100644
+index 716b73770..71926555b 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -901,6 +901,9 @@ else
+@@ -902,6 +902,9 @@ else
  CC_FLAGS_LTO	:= -flto
  endif
  CC_FLAGS_LTO	+= -fvisibility=hidden
@@ -958,9 +871,9 @@ index a02710050..ee07376e0 100644
  
  ifdef CONFIG_LTO
 -- 
-2.30.0
+2.30.1
 
-From 0b4b2365a5665a3530382c8959fd720469f4cd51 Mon Sep 17 00:00:00 2001
+From f7414bdfff3f375341fca0a66fb278c4a558e2a2 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Tue, 3 Dec 2019 15:56:24 -0800
 Subject: [PATCH] kbuild: lto: merge module sections
@@ -1013,9 +926,9 @@ index 69b9b71a6..18d5b8423 100644
  
  /* bring in arch-specific sections */
 -- 
-2.30.0
+2.30.1
 
-From 32bb092e16991dd47430b84b0dfd52ac1a71b47f Mon Sep 17 00:00:00 2001
+From 74dd81a2695263ab983fa95ff7ab22fc00c53f7a Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Fri, 11 Dec 2020 10:46:23 -0800
 Subject: [PATCH] kbuild: lto: add a default list of used symbols
@@ -1043,10 +956,10 @@ Signed-off-by: torvic9 <torvic9@mailbox.org>
  create mode 100644 scripts/lto-used-symbollist.txt
 
 diff --git a/init/Kconfig b/init/Kconfig
-index b77c60f8b..5271138b8 100644
+index 29ad68325..c6cbe3824 100644
 --- a/init/Kconfig
 +++ b/init/Kconfig
-@@ -2297,6 +2297,7 @@ config TRIM_UNUSED_KSYMS
+@@ -2296,6 +2296,7 @@ config TRIM_UNUSED_KSYMS
  config UNUSED_KSYMS_WHITELIST
  	string "Whitelist of symbols to keep in ksymtab"
  	depends on TRIM_UNUSED_KSYMS
@@ -1066,9 +979,9 @@ index 000000000..38e7bb9eb
 +__stack_chk_fail
 +__stack_chk_guard
 -- 
-2.30.0
+2.30.1
 
-From 67bf54137e096592c87a0a55d92b87f7acabe70d Mon Sep 17 00:00:00 2001
+From b82949dd1322e4f41f8d30cf765ca178b6179712 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Fri, 8 Dec 2017 15:49:24 -0800
 Subject: [PATCH] init: lto: ensure initcall ordering
@@ -1512,9 +1425,9 @@ index 78e55fe72..c5919d5a0 100755
  	rm -f .tmp_vmlinux*
  	rm -f System.map
 -- 
-2.30.0
+2.30.1
 
-From a076f87937af283f2428b8326f96b95301680551 Mon Sep 17 00:00:00 2001
+From 3c09acd6d9e02f23616a9a13664afc0c2d6a018e Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Sun, 22 Mar 2020 17:01:40 -0700
 Subject: [PATCH] init: lto: fix PREL32 relocations
@@ -1591,9 +1504,9 @@ index a57bf0dfd..a01f01c1a 100644
  		__initcall_section(__sec, __iid))
  
 -- 
-2.30.0
+2.30.1
 
-From 3cddba9553b48ba0633abfcb45c734563da58fa7 Mon Sep 17 00:00:00 2001
+From 6d57a3aba6ceeb0b6173c0acd0f20cde86108fd4 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Fri, 11 Dec 2020 10:46:26 -0800
 Subject: [PATCH] PCI: Fix PREL32 relocations for LTO
@@ -1664,9 +1577,9 @@ index b32126d26..2276e5d00 100644
  /* Anonymous variables would be nice... */
  #define DECLARE_PCI_FIXUP_SECTION(section, name, vendor, device, class,	\
 -- 
-2.30.0
+2.30.1
 
-From 81abcd6fc352c1addba4ec8a9b68bdb969800072 Mon Sep 17 00:00:00 2001
+From 5879effbd4987175cfa754ea17dcfa3337806953 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Fri, 6 Mar 2020 13:52:03 -0800
 Subject: [PATCH] modpost: lto: strip .lto from module names
@@ -1782,9 +1695,9 @@ index d587f40f1..760e6baa7 100644
  	buf = read_text_file(filelist);
  
 -- 
-2.30.0
+2.30.1
 
-From e2febb6662e7b62884100285267024b1b8565f40 Mon Sep 17 00:00:00 2001
+From 0b68a0bab0c6f7a82040685710c11bee8109bbf1 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Mon, 10 Apr 2017 12:32:24 -0700
 Subject: [PATCH] scripts/mod: disable LTO for empty.c
@@ -1812,9 +1725,9 @@ index 78071681d..c9e38ad93 100644
  hostprogs-always-y	+= modpost mk_elfconfig
  always-y		+= empty.o
 -- 
-2.30.0
+2.30.1
 
-From 7343993af51409c5eec528338c063f7e425db40c Mon Sep 17 00:00:00 2001
+From 9006ad6812d5b1ddb1b12c183ba9c3a21a25a84c Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Mon, 1 May 2017 11:08:05 -0700
 Subject: [PATCH] efi/libstub: disable LTO
@@ -1844,9 +1757,9 @@ index 8a94388e3..c23466e05 100644
  GCOV_PROFILE			:= n
  # Sanitizer runtimes are unavailable and cannot be linked here.
 -- 
-2.30.0
+2.30.1
 
-From 6489fb58903839a3590f4fab5baa1efd87b52b20 Mon Sep 17 00:00:00 2001
+From 001530e5eea5d35327fb5c1fffddd774ea7f8288 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Tue, 5 Dec 2017 12:54:13 -0800
 Subject: [PATCH] drivers/misc/lkdtm: disable LTO for rodata.o
@@ -1874,9 +1787,9 @@ index 6b888d043..aa1209766 100644
  OBJCOPYFLAGS :=
  OBJCOPYFLAGS_rodata_objcopy.o	:= \
 -- 
-2.30.0
+2.30.1
 
-From 1b4f1de8da1bdf73c2a7dbee2eb39b19550cbb94 Mon Sep 17 00:00:00 2001
+From 4eebd87cd7c068e073b85c2ce778ebe1e7638e08 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Tue, 19 Dec 2017 08:55:23 -0800
 Subject: [PATCH] arm64: vdso: disable LTO
@@ -1907,9 +1820,9 @@ index cd9c3fa25..47cf442bb 100644
  UBSAN_SANITIZE			:= n
  OBJECT_FILES_NON_STANDARD	:= y
 -- 
-2.30.0
+2.30.1
 
-From 5274d140cc33e2288f6bc3cafc0a99189be41886 Mon Sep 17 00:00:00 2001
+From e7cbc43e8a674bc47c53c276ce058c64c486f539 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Fri, 25 Sep 2020 12:28:13 -0700
 Subject: [PATCH] arm64: disable recordmcount with DYNAMIC_FTRACE_WITH_REGS
@@ -1946,9 +1859,9 @@ index f39568b28..41bcdce0c 100644
  	select HAVE_FAST_GUP
  	select HAVE_FTRACE_MCOUNT_RECORD
 -- 
-2.30.0
+2.30.1
 
-From b4b412406549b18cb5a41d1cba0063844f2c0722 Mon Sep 17 00:00:00 2001
+From cf7c647269eff0c987a15efa8d572c4011dc0906 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Thu, 2 Nov 2017 09:34:42 -0700
 Subject: [PATCH] arm64: allow LTO to be selected
@@ -1977,9 +1890,9 @@ index 41bcdce0c..9a8e889c0 100644
  	select ARCH_SUPPORTS_INT128 if CC_HAS_INT128 && (GCC_VERSION >= 50000 || CC_IS_CLANG)
  	select ARCH_SUPPORTS_NUMA_BALANCING
 -- 
-2.30.0
+2.30.1
 
-From c66f4307fd65556c2ede93a3fb2373e8d81d2cc3 Mon Sep 17 00:00:00 2001
+From 500210131d64e42b0b3087105ebd5c270fbd004a Mon Sep 17 00:00:00 2001
 From: Peter Zijlstra <peterz@infradead.org>
 Date: Thu, 6 Aug 2020 15:14:09 -0700
 Subject: [PATCH] objtool: Add a pass for generating __mcount_loc
@@ -2183,9 +2096,9 @@ index 4125d4578..cf004dd60 100644
  };
  
 -- 
-2.30.0
+2.30.1
 
-From bf4e1de75ab7c8cbad61ab51dac8f00730b51104 Mon Sep 17 00:00:00 2001
+From f0d94ce5423d8059d1000f3c808aa52e739dbf32 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Wed, 28 Oct 2020 10:16:26 -0700
 Subject: [PATCH] objtool: Fix __mcount_loc generation with Clang's assembler
@@ -2233,9 +2146,9 @@ index 1b9f051db..304c3d658 100644
  		reloc->offset = idx * sizeof(unsigned long);
  		reloc->sec = reloc_sec;
 -- 
-2.30.0
+2.30.1
 
-From bb62530b291486ad44da0f8929a2c24f6a2c8240 Mon Sep 17 00:00:00 2001
+From 038a7943620502c8825bae288a5bfb6811594ec6 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Fri, 17 Jul 2020 12:04:27 -0700
 Subject: [PATCH] objtool: Don't autodetect vmlinux.o
@@ -2291,9 +2204,9 @@ index e92e76f69..facfc10bc 100644
  	if (!file)
  		return 1;
 -- 
-2.30.0
+2.30.1
 
-From 5dda9fa2c88e99e78d526960ed6f849ee81cb8da Mon Sep 17 00:00:00 2001
+From f7c32cb83ef2e446fec2caeef383f21ffb98cbcd Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Fri, 25 Sep 2020 16:43:53 -0700
 Subject: [PATCH] tracing: add support for objtool mcount
@@ -2310,10 +2223,10 @@ Signed-off-by: torvic9 <torvic9@mailbox.org>
  3 files changed, 23 insertions(+)
 
 diff --git a/Makefile b/Makefile
-index ee07376e0..a43dfdac1 100644
+index 71926555b..2c5f7d2ae 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -860,6 +860,9 @@ ifdef CONFIG_FTRACE_MCOUNT_USE_CC
+@@ -861,6 +861,9 @@ ifdef CONFIG_FTRACE_MCOUNT_USE_CC
      endif
    endif
  endif
@@ -2323,7 +2236,7 @@ index ee07376e0..a43dfdac1 100644
  ifdef CONFIG_FTRACE_MCOUNT_USE_RECORDMCOUNT
    ifdef CONFIG_HAVE_C_RECORDMCOUNT
      BUILD_C_RECORDMCOUNT := y
-@@ -1236,6 +1239,10 @@ uapi-asm-generic:
+@@ -1231,6 +1234,10 @@ uapi-asm-generic:
  PHONY += prepare-objtool prepare-resolve_btfids
  prepare-objtool: $(objtool_target)
  ifeq ($(SKIP_STACK_VALIDATION),1)
@@ -2384,9 +2297,9 @@ index d94fc9ab8..59fabd968 100644
  # 'OBJECT_FILES_NON_STANDARD := y': skip objtool checking for a directory
  # 'OBJECT_FILES_NON_STANDARD_foo.o := 'y': skip objtool checking for a file
 -- 
-2.30.0
+2.30.1
 
-From 467c026bc7dcb1dee4fcd6cb3035e6e1f4e4f7d2 Mon Sep 17 00:00:00 2001
+From c1cad0540f3e702163d3a3cdf2dc2a032bbf8860 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Thu, 6 Aug 2020 15:15:02 -0700
 Subject: [PATCH] x86, build: use objtool mcount
@@ -2415,9 +2328,9 @@ index 21f851179..300a9b529 100644
  	select HAVE_DMA_CONTIGUOUS
  	select HAVE_DYNAMIC_FTRACE
 -- 
-2.30.0
+2.30.1
 
-From 2dac67620e30e8b5e6719e0274077770e97806a6 Mon Sep 17 00:00:00 2001
+From 228369dbaab890100019573f93689868af629522 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Wed, 30 Sep 2020 14:36:59 -0700
 Subject: [PATCH] objtool: Split noinstr validation from --vmlinux
@@ -2497,9 +2410,9 @@ index 304c3d658..5db35e25b 100644
  }
  
 -- 
-2.30.0
+2.30.1
 
-From d6bf7fb64ecea2f224c9e78ea4003fee0db268d6 Mon Sep 17 00:00:00 2001
+From 315070441df993e46964fda1dc0856b4d114c581 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Mon, 13 Apr 2020 16:10:13 -0700
 Subject: [PATCH] kbuild: lto: postpone objtool
@@ -2683,9 +2596,9 @@ index 18aed761f..3b261b0f7 100755
  }
  
 -- 
-2.30.0
+2.30.1
 
-From e0fa7e2c50662165a90d8b40e0f99cbf73e28a6f Mon Sep 17 00:00:00 2001
+From 30d053893a40c4b2695b27aa4a25a0e0332640f3 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Tue, 16 Apr 2019 14:40:00 -0700
 Subject: [PATCH] x86, vdso: disable LTO only for vDSO
@@ -2723,9 +2636,9 @@ index 02e3e42f3..05c4abc2f 100644
  KBUILD_CFLAGS_32 += -fno-stack-protector
  KBUILD_CFLAGS_32 += $(call cc-option, -foptimize-sibling-calls)
 -- 
-2.30.0
+2.30.1
 
-From 90fdc2b7611d58ee8c6a02b849c6daa5e9d466eb Mon Sep 17 00:00:00 2001
+From 61ba7f4b934d34f95b38a4c811dbc93f9296ee71 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Wed, 16 Sep 2020 12:57:56 -0700
 Subject: [PATCH] x86, cpu: disable LTO for cpu.c
@@ -2758,9 +2671,9 @@ index 6907b523e..5f711a441 100644
  obj-$(CONFIG_PM_SLEEP)		+= cpu.o
  obj-$(CONFIG_HIBERNATION)	+= hibernate_$(BITS).o hibernate_asm_$(BITS).o hibernate.o
 -- 
-2.30.0
+2.30.1
 
-From a550fae5f921f3befa65a7e0711a61c38edd350a Mon Sep 17 00:00:00 2001
+From f7ac5b5720e250cc8e8b29fe5edc86515e8b1310 Mon Sep 17 00:00:00 2001
 From: Sami Tolvanen <samitolvanen@google.com>
 Date: Wed, 10 Apr 2019 14:17:20 -0700
 Subject: [PATCH] x86, build: allow LTO to be selected
@@ -2790,10 +2703,10 @@ index 300a9b529..b24aae5fd 100644
  	select ARCH_USE_QUEUED_RWLOCKS
  	select ARCH_USE_QUEUED_SPINLOCKS
 diff --git a/arch/x86/Makefile b/arch/x86/Makefile
-index 7116da398..845baf58d 100644
+index 5857917f8..c0594e1b4 100644
 --- a/arch/x86/Makefile
 +++ b/arch/x86/Makefile
-@@ -166,6 +166,11 @@ ifeq ($(ACCUMULATE_OUTGOING_ARGS), 1)
+@@ -169,6 +169,11 @@ ifeq ($(ACCUMULATE_OUTGOING_ARGS), 1)
  	KBUILD_CFLAGS += $(call cc-option,-maccumulate-outgoing-args,)
  endif
  
@@ -2806,5 +2719,5 @@ index 7116da398..845baf58d 100644
  KBUILD_CFLAGS += -Wno-sign-compare
  #
 -- 
-2.30.0
+2.30.1
 

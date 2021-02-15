@@ -151,11 +151,11 @@ if [[ ${_clang} -eq 1 ]]; then
 	LLVMOPTS="LLVM=1 LLVM_IAS=1"
 	CLANGOPTS="CC=clang LD=ld.lld"
 	source+=('9001-objtool-fixes-jp.patch'
-	'9002-clang-lto-20210205.patch'
+	'9002-clang-lto-20210213.patch'
 	#'9003-clang-pgo-v7.patch' # pgo is still very experimental
 	)
 	sha256sums+=('6facba496859c28160d5872800834af28fb152feaf07d4cfa03cf1fc611bcd67'
-	'6b4a3962ebf8301cf677643ba7513f5335c19ed143c1f19fa7ae8f8449ef64dc'
+	'37c564255485ca9e1649ce31d3f6738a066136fe4fe26042b9bcab955b82db94'
 	#'ea2b7feb663faa177a8aad36f99e68cffc4a95ce7a0fd321a0d7c86cb66204ea'
 	)
 else

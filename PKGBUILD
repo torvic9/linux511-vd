@@ -11,7 +11,7 @@ _kernelname=-vd
 _sub=0
 #_rc=rc7
 pkgver=${_basekernel}.${_sub}
-pkgrel=1.1
+pkgrel=1
 _archpatch=20210129
 _prjc="r2"
 _stablequeue=a1028684e3
@@ -67,7 +67,7 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver/.${_sub}/}.t
     #
     # futex_wait_multiple
     1001-futex-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11-rc/futex-trunk-patches-v2/0001-futex-resync-from-gitlab.collabora.com.patch
-    #1002-futex2-stable-511.patch
+    #1002-futex2-511.patch # we cannot use this yet ootb, needs patched glibc+systemd+wine
     #
     # MANJARO Patches
     #

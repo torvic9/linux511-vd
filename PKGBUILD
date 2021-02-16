@@ -11,9 +11,9 @@ _kernelname=-vd
 _sub=0
 #_rc=rc7
 pkgver=${_basekernel}.${_sub}
-pkgrel=1
+pkgrel=3
 _archpatch=20210129
-_prjc="r2"
+_prjc="r0"
 _stablequeue=a1028684e3
 arch=('x86_64')
 url="http://www.kernel.org/"
@@ -48,6 +48,7 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver/.${_sub}/}.t
     0011-block-bfq-fixes-and-improvements.patch
     # tip:sched/core
     0012-tip-sched-core-20210205.patch
+    #0012-tip-sched-core-no-dyn-preempt-20210205.patch # for use with ProjectC
     # sched balance tweaks
     0013-sched-fair-misfit-task-load-balance-tweaks.patch
     # rcu fixes
@@ -64,6 +65,8 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver/.${_sub}/}.t
     0019-augmented-page-reclaim.patch
     # Nuvoton nc677x driver
     0020-i2c-nuvoton-nc677x-hwmon-driver-git.patch::https://gitlab.com/CalcProgrammer1/OpenRGB/-/raw/master/OpenRGB.patch
+    # cpufreq/acpi fix for Zen
+    0021-cpufreq-acpi-set-cpuinfo.max_freq-directly-if-max-boost-is-known.patch
     #
     # futex_wait_multiple
     1001-futex-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11-rc/futex-trunk-patches-v2/0001-futex-resync-from-gitlab.collabora.com.patch
@@ -82,11 +85,10 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver/.${_sub}/}.t
     2007-ntfs-rw-gpl-driver-implementation-by-paragon-v21.patch
     #
     # Project C (BMQ+PDS)
-    # 3001-projectc510-${_prjc}-orig.patch::https://gitlab.com/alfredchen/linux-prjc/uploads/cda220f104bd6e07ea6fefa86c709dbe/prjc_v5.10-r2.patch
+    #3001-projectc511-${_prjc}-orig.patch::https://gitlab.com/alfredchen/linux-prjc/uploads/12a5a2a5f6be6a62a2e069e9b4a3b99d/prjc_v5.11-r0.patch
+    #3001-projectc511-${_prjc}-vd.patch # for use with tip
     # CacULE
     # 3002-cacule-510rdb.patch::https://raw.githubusercontent.com/hamadmarri/cacule-cpu-scheduler/master/patches/CacULE/v5.10/cacule5.10-rdb.patch
-    # MuQSS
-    # 3003-ck-muqss-510.patch
     #
     # pgo profile data
     # vmlinux.profdata
@@ -124,6 +126,7 @@ sha256sums=('04f07b54f0d40adfab02ee6cbd2a942c96728d87c1ef9e120d0cb9ba3fe067b4'
             'd138a6a6c627b371533e0d6918e5c3c28c33336d6c06b91c97e8032aec57a68a'
             'ca2cd10fc86d3347d98da60e11b8ca02544d62d4da6179b9555fc92cacfb6838'
             'e7d724ac15daf428aa1e6a03737e5c1d040892d55fda8a66897fcac9323f285c'
+            '6b0680296176bbed4cd158525b9147ff952b4f71364a3d739425d6fa2b872030'
             '239307e0018ab2405b9afaa7d315ee3352b83819a3c75b65951749b52a3247d2'
             '7fd689f4ec88364d1ac00007e6f1e273ee9b53cae187e0f70e7f810303dc9303'
             'f7a36231b794022d49e53f464d25e48f2eebf6266c2cbe5756c63aa3bf03bae7'

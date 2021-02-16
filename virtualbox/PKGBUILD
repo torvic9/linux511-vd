@@ -19,7 +19,7 @@ _extramodules=extramodules-linux511-vd
 
 pkgbase=$_linuxprefix-virtualbox-modules
 pkgname=("$_linuxprefix-virtualbox-host-modules")
-pkgver=6.1.16
+pkgver=6.1.18
 _pkgver="${pkgver}_OSE"
 pkgrel=1
 arch=('x86_64')

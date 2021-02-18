@@ -11,8 +11,8 @@ _kernelname=-vd
 _sub=0
 #_rc=rc7
 pkgver=${_basekernel}.${_sub}
-pkgrel=3
-_archpatch=20210129
+pkgrel=5
+_archpatch=20210214
 _prjc="r0"
 _stablequeue=a1028684e3
 arch=('x86_64')
@@ -29,7 +29,7 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver/.${_sub}/}.t
     # "prepatch-${_basekernel/./}-g${_stablequeue}.patch"
     #
     # Arch patches
-    0001-arch-patches511-${_archpatch}.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11-rc/arch-patches-v7/0001-arch-patches.patch
+    0001-arch-patches511-${_archpatch}.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11/arch-patches-v2/0001-ZEN-Add-sysctl-and-CONFIG-to-disallow-unprivileged-C.patch
     # CPU patches
     0002-graysky-cpu-optimizations.patch
     0003-enable-O3-for-all-archs-and-add-option-for-O1.patch
@@ -44,32 +44,33 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver/.${_sub}/}.t
     0009-amd-sfh-driver-refactored.patch
     # blk-mq fixes
     0010-blk-mq-dont-complete-in-IRQ-use-llist_head.patch
+    0011-blk-mq-improve-performance-of-non-mq-io-schedulers.patch
     # bfq fixes
-    0011-block-bfq-fixes-and-improvements.patch
+    0012-block-bfq-fixes-and-improvements.patch
     # tip:sched/core
-    0012-tip-sched-core-20210205.patch
-    #0012-tip-sched-core-no-dyn-preempt-20210205.patch # for use with ProjectC
+    0013-tip-sched-core-20210205.patch
+    #0013-tip-sched-core-no-dyn-preempt-20210205.patch # for use with ProjectC
     # sched balance tweaks
-    0013-sched-fair-misfit-task-load-balance-tweaks.patch
+    0014-sched-fair-misfit-task-load-balance-tweaks.patch
     # rcu fixes
-    0014-rcu-fixes-next.patch
+    0015-rcu-fixes-next.patch
     # rcu fix prio boost
-    0015-rcu-fix-priority-boosting.patch
+    0016-rcu-fix-priority-boosting.patch
     # amdgpu
-    0016-drm-amdgpu-fixes-next.patch
+    0017-drm-amdgpu-fixes-next.patch
     # fs buffer fix
-    0017-fs-buffer-revoke-lru-when-trying-to-drop-buffers-v4.patch
+    0018-fs-buffer-revoke-lru-when-trying-to-drop-buffers-v4.patch
     # btrfs patches
-    0018-btrfs-patches-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11-rc/btrfs-patches-v7/0001-btrfs-patches.patch
-    # better page reclaim by google
-    0019-augmented-page-reclaim.patch
+    0019-btrfs-patches-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11/btrfs-patches/0001-btrfs-patches.patch
+    # multigenerational lru by google
+    0020-multigenerational-lru-v1.patch
     # Nuvoton nc677x driver
-    0020-i2c-nuvoton-nc677x-hwmon-driver-git.patch::https://gitlab.com/CalcProgrammer1/OpenRGB/-/raw/master/OpenRGB.patch
+    0021-i2c-nuvoton-nc677x-hwmon-driver-git.patch::https://gitlab.com/CalcProgrammer1/OpenRGB/-/raw/master/OpenRGB.patch
     # cpufreq/acpi fix for Zen
-    0021-cpufreq-acpi-set-cpuinfo.max_freq-directly-if-max-boost-is-known.patch
+    0022-cpufreq-acpi-set-cpuinfo.max_freq-directly-if-max-boost-is-known.patch
     #
     # futex_wait_multiple
-    1001-futex-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11-rc/futex-trunk-patches-v2/0001-futex-resync-from-gitlab.collabora.com.patch
+    1001-futex-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11/futex-trunk-patches/0001-futex-resync-from-gitlab.collabora.com.patch
     #1002-futex2-511.patch # we cannot use this yet ootb, needs patched glibc+systemd+wine
     #
     # MANJARO Patches
@@ -106,7 +107,7 @@ sha256sums=('04f07b54f0d40adfab02ee6cbd2a942c96728d87c1ef9e120d0cb9ba3fe067b4'
             '6f4d0e174b1036a2aca5a828c50461aaffa8d7c602985dab1ac7b510a359bddb'
             'ab010dc5ef6ce85d352956e5996d242246ecd0912b30f0b72025c38eadff8cd5'
             '8f357fab1c5b3e81240b543a6643fdbca1d8591f5dd18bc18e38ae992d78944c'
-            'f8be7257633cdec954b220feadebe60af3f7c7e6c6e9c0a140fe339856d42af3'
+            'ffd5b4bbb0e9e8306d1ae6faf62f1ef878bfa50ddba4ab959351f3fedc85654a'
             '9b0c200b0dadfcfb1b3c42acd0c007e1d582a86abc6b04f3096e0535c8784ab6'
             '3d38fc4052b999b67aaed9fe9a4ba6ffd778ffbf7e94a66d5577391dbd08d12a'
             '0a05bbb282502db210f8ab843a5c3f39b847af5303fb7bd5a8655686cf76c1b7'
@@ -116,6 +117,7 @@ sha256sums=('04f07b54f0d40adfab02ee6cbd2a942c96728d87c1ef9e120d0cb9ba3fe067b4'
             '5000348583882523ef3c36df27eabf4355e83d0605081a3bf5d4aaa28e518162'
             'a881179be827dfee0b10c704fc8e1c501683f61e8041df392b48b51cba215856'
             '18a84957915dd924cbdddfb031954f97e951bd96f5593fb1eb8c73bc4a61bd3f'
+            '623a3b02b980fcd52bc7d230be1661ada7b557e3cd83c0560666e1f010bd3509'
             '9e86bfb28c4c9a30a116f57c24d57cf7488df2755198425522564b4e8f8015e7'
             'db3b8d090f2b9c537f467eb0b5433127c9272824a7c97ebf3c7b8521ceafb0a9'
             '13acb14484a79496a07f65831686887854c89ed50d662682052fb025d99c5b5e'
@@ -123,7 +125,7 @@ sha256sums=('04f07b54f0d40adfab02ee6cbd2a942c96728d87c1ef9e120d0cb9ba3fe067b4'
             '49b29307ee96f85db5949866fd2f5a76502dd5be7564771febfe57c807b4f740'
             '1922dca263ce9f9790fd37e8ead35e32eea0df0391b1d83c6dcef911411d807a'
             '1523298b9c29fa80ecc945982b7e450b5a9128054f91bce0fc596141ed3d1df2'
-            'd053785a07e7e4ee206bd3a4ac19a10615e80a8ec267149ba7c6e03ee84de61b'
+            '4fd11c312808c3dbcff6cef079de397928249fe23b6654c745ceb3432f673c60'
             'ca2cd10fc86d3347d98da60e11b8ca02544d62d4da6179b9555fc92cacfb6838'
             'e7d724ac15daf428aa1e6a03737e5c1d040892d55fda8a66897fcac9323f285c'
             '6b0680296176bbed4cd158525b9147ff952b4f71364a3d739425d6fa2b872030'
@@ -154,11 +156,11 @@ if [[ ${_clang} -eq 1 ]]; then
 	LLVMOPTS="LLVM=1 LLVM_IAS=1"
 	CLANGOPTS="CC=clang LD=ld.lld"
 	source+=('9001-objtool-fixes-jp.patch'
-	'9002-clang-lto-20210213.patch'
+	'9002-clang-lto-20210217.patch'
 	#'9003-clang-pgo-v7.patch' # pgo is still very experimental
 	)
 	sha256sums+=('6facba496859c28160d5872800834af28fb152feaf07d4cfa03cf1fc611bcd67'
-	'37c564255485ca9e1649ce31d3f6738a066136fe4fe26042b9bcab955b82db94'
+	'2a55be336d1b8df8dda423efd7793c96cc144002e3e9f8c7b972ea28d435175c'
 	#'ea2b7feb663faa177a8aad36f99e68cffc4a95ce7a0fd321a0d7c86cb66204ea'
 	)
 else

@@ -11,7 +11,7 @@ _kernelname=-vd
 _sub=0
 #_rc=rc7
 pkgver=${_basekernel}.${_sub}
-pkgrel=5
+pkgrel=6
 _archpatch=20210214
 _prjc="r0"
 _stablequeue=a1028684e3
@@ -93,6 +93,9 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver/.${_sub}/}.t
     #
     # pgo profile data
     # vmlinux.profdata
+    #
+    # reverts
+    drm-amdgpu-reuse-current-context.revert
 )
 
 validpgpkeys=(
@@ -136,7 +139,8 @@ sha256sums=('04f07b54f0d40adfab02ee6cbd2a942c96728d87c1ef9e120d0cb9ba3fe067b4'
             '4c0beb1f181e7ee22e978f447aaccc3bd7f326e861a5afb5798922b1e7efc2ec'
             '02d2c0e6b2459d4dbd6d4cecb3b269545a78b86cc9d2d3a0fda80bb3c3ee7604'
             'a231aebaa262c60f5f0151819db4b06e92986d5c81e8e0a90e7089a0ac9d454c'
-            '24a024268e8ac2548078ad7ea3445a2331d21df6eb01f5caf9b1b42caf4241bb')
+            '24a024268e8ac2548078ad7ea3445a2331d21df6eb01f5caf9b1b42caf4241bb'
+            'f2f32f91f33ba0179c5ebdff8e672203d99ca1b517f1fe6d9c8c3933dad42817')
 
 export KBUILD_BUILD_USER=$pkgbase
 export KBUILD_BUILD_HOST=eos
@@ -190,6 +194,8 @@ prepare() {
         	patch -Np1 -i "../${filename}"
   	fi
   done
+  echo -e "\n---- Reverts:"
+  patch -Np1 -R -i "../drm-amdgpu-reuse-current-context.revert"
 
   # kernel config
   echo -e "\n${TB}* KERNEL CONFIGURATION${TN}"

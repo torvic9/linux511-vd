@@ -1,33 +1,4 @@
 From patchwork Mon Feb 15 19:24:46 2021
-Content-Type: text/plain; charset="utf-8"
-MIME-Version: 1.0
-Content-Transfer-Encoding: 7bit
-X-Patchwork-Submitter: "Rafael J. Wysocki" <rjw@rjwysocki.net>
-X-Patchwork-Id: 1381015
-Return-Path: <linux-kernel-owner@kernel.org>
-Received: from mail.kernel.org (mail.kernel.org [198.145.29.99])
-	by smtp.lore.kernel.org (Postfix) with ESMTP id 38321C433E6
-	for <linux-kernel@archiver.kernel.org>; Mon, 15 Feb 2021 19:25:51 +0000 (UTC)
-Received: from vger.kernel.org (vger.kernel.org [23.128.96.18])
-	by mail.kernel.org (Postfix) with ESMTP id EA3A564E04
-	for <linux-kernel@archiver.kernel.org>; Mon, 15 Feb 2021 19:25:50 +0000 (UTC)
-Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
-        id S230260AbhBOTZn (ORCPT <rfc822;linux-kernel@archiver.kernel.org>);
-        Mon, 15 Feb 2021 14:25:43 -0500
-Received: from cloudserver094114.home.pl ([79.96.170.134]:62620 "EHLO
-        cloudserver094114.home.pl" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
-        with ESMTP id S229981AbhBOTZc (ORCPT
-        <rfc822;linux-kernel@vger.kernel.org>);
-        Mon, 15 Feb 2021 14:25:32 -0500
-Received: from localhost (127.0.0.1) (HELO v370.home.net.pl)
- by /usr/run/smtp (/usr/run/postfix/private/idea_smtp) via UNIX with SMTP
- (IdeaSmtpServer 0.83.537)
- id 472bc93a69a25bc3; Mon, 15 Feb 2021 20:24:48 +0100
-Received: from kreacher.localnet (89-64-82-54.dynamic.chello.pl [89.64.82.54])
-        (using TLSv1.2 with cipher ECDHE-RSA-AES256-GCM-SHA384 (256/256 bits))
-        (No client certificate requested)
-        by v370.home.net.pl (Postfix) with ESMTPSA id CB7A1661D7E;
-        Mon, 15 Feb 2021 20:24:46 +0100 (CET)
 From: "Rafael J. Wysocki" <rjw@rjwysocki.net>
 To: Linux PM <linux-pm@vger.kernel.org>,
         Giovanni Gherdovich <ggherdovich@suse.cz>,
@@ -43,15 +14,6 @@ Cc: LKML <linux-kernel@vger.kernel.org>,
 Subject: [RFT][PATCH v1] cpufreq: ACPI: Set cpuinfo.max_freq directly if max
  boost is known
 Date: Mon, 15 Feb 2021 20:24:46 +0100
-Message-ID: <1974978.nRy8TqEeLZ@kreacher>
-MIME-Version: 1.0
-X-VADE-SPAMSTATE: clean
-X-VADE-SPAMCAUSE: 
- gggruggvucftvghtrhhoucdtuddrgeduledrieekgdduvddtucetufdoteggodetrfdotffvucfrrhhofhhilhgvmecujffqoffgrffnpdggtffipffknecuuegrihhlohhuthemucduhedtnecusecvtfgvtghiphhivghnthhsucdlqddutddtmdenucfjughrpefhvffufffkggfgtgesthfuredttddtvdenucfhrhhomhepfdftrghfrggvlhculfdrucghhihsohgtkhhifdcuoehrjhifsehrjhifhihsohgtkhhirdhnvghtqeenucggtffrrghtthgvrhhnpeeiueevhfeigffhffevueekgedtleeitdfhffejleevtddvtdettedvfffffffhjeenucffohhmrghinhepkhgvrhhnvghlrdhorhhgnecukfhppeekledrieegrdekvddrheegnecuvehluhhsthgvrhfuihiivgeptdenucfrrghrrghmpehinhgvthepkeelrdeigedrkedvrdehgedphhgvlhhopehkrhgvrggthhgvrhdrlhhotggrlhhnvghtpdhmrghilhhfrhhomhepfdftrghfrggvlhculfdrucghhihsohgtkhhifdcuoehrjhifsehrjhifhihsohgtkhhirdhnvghtqedprhgtphhtthhopehlihhnuhigqdhpmhesvhhgvghrrdhkvghrnhgvlhdrohhrghdprhgtphhtthhopehgghhhvghrughovhhitghhsehsuhhsvgdrtgiipdhrtghpthhtohepofhitghhrggvlhesphhhohhrohhnihigrdgtohhmpdhrtghpthhtoheplhhinhhugidqkhgvrhhnvghlsehvghgvrhdrkhgvrhhnvghlrdhorhhgpdhrtghpthhtoheplhhinhhugidqrggt
- phhisehvghgvrhdrkhgvrhhnvghlrdhorhhgpdhrtghpthhtohepphgvthgvrhiisehinhhfrhgruggvrggurdhorhhgpdhrtghpthhtohepshhrihhnihhvrghsrdhprghnughruhhvrggurgeslhhinhhugidrihhnthgvlhdrtghomhdprhgtphhtthhopehvihhrvghshhdrkhhumhgrrheslhhinhgrrhhordhorhhgpdhrtghpthhtohepmhhgohhrmhgrnhesthgvtghhshhinhhguhhlrghrihhthidrnhgvthdprhgtphhtthhopehjuhhrihdrlhgvlhhlihesrhgvughhrghtrdgtohhmpdhrtghpthhtohepvhhinhgtvghnthdrghhuihhtthhotheslhhinhgrrhhordhorhhg
-X-DCC--Metrics: v370.home.net.pl 1024; Body=11 Fuz1=11 Fuz2=11
-Precedence: bulk
-List-ID: <linux-kernel.vger.kernel.org>
 X-Mailing-List: linux-kernel@vger.kernel.org
 
 From: Rafael J. Wysocki <rafael.j.wysocki@intel.com>

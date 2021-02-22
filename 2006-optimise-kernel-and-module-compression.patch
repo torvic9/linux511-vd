@@ -3,11 +3,11 @@ From: torvic9 <torvic9@mailbox.org>
 Date: Thu, 17 Dec 2020 15:23:57 +0100
 Subject: [PATCH] optimise kernel and module compression
 
-Use smaller dictionary size for xz compression, also replace zstd22 by
+Use smaller dictionary size for xz compression, also replace zstd22 with
 zstd18 because it is faster without losing much in terms of compression
 ratio. For the same reason, use lower values for gzip module and kernel
 compression.
-Finally, use lz4-4 instead of the default, offering slightly better
+Finally, use lz4-3 instead of the default lz4-1, offering slightly better
 compression ratio.
 
 Signed-off-by: torvic9 <torvic9@mailbox.org>
@@ -73,7 +73,7 @@ index 941337088..de17884be 100644
  
  quiet_cmd_lz4 = LZ4     $@
 -      cmd_lz4 = { cat $(real-prereqs) | $(LZ4) -l -c1 stdin stdout; \
-+      cmd_lz4 = { cat $(real-prereqs) | $(LZ4) -4 -l -c stdin stdout; \
++      cmd_lz4 = { cat $(real-prereqs) | $(LZ4) -3 -l -c stdin stdout; \
                    $(size_append); } > $@
  
  # U-Boot mkimage

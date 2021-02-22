@@ -12,7 +12,7 @@ _sub=0
 #_rc=rc7
 pkgver=${_basekernel}.${_sub}
 pkgrel=6
-_archpatch=20210214
+_archpatch=20210219
 _prjc="r0"
 _stablequeue=a1028684e3
 arch=('x86_64')
@@ -29,7 +29,7 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver/.${_sub}/}.t
     # "prepatch-${_basekernel/./}-g${_stablequeue}.patch"
     #
     # Arch patches
-    0001-arch-patches511-${_archpatch}.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11/arch-patches-v2/0001-ZEN-Add-sysctl-and-CONFIG-to-disallow-unprivileged-C.patch
+    0001-arch-patches511-${_archpatch}.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11/arch-patches-v4/0001-arch-patches.patch
     # CPU patches
     0002-graysky-cpu-optimizations.patch
     0003-enable-O3-for-all-archs-and-add-option-for-O1.patch
@@ -51,7 +51,7 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver/.${_sub}/}.t
     0013-tip-sched-core-20210205.patch
     #0013-tip-sched-core-no-dyn-preempt-20210205.patch # for use with ProjectC
     # sched balance tweaks
-    0014-sched-fair-misfit-task-load-balance-tweaks.patch
+    0014-sched-fair-misfit-task-load-balance-tweaks-v2.patch
     # rcu fixes
     0015-rcu-fixes-next.patch
     # rcu fix prio boost
@@ -61,7 +61,7 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver/.${_sub}/}.t
     # fs buffer fix
     0018-fs-buffer-revoke-lru-when-trying-to-drop-buffers-v4.patch
     # btrfs patches
-    0019-btrfs-patches-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11/btrfs-patches/0001-btrfs-patches.patch
+    0019-btrfs-patches-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11/btrfs-patches-v2/0001-btrfs-patches.patch
     # multigenerational lru by google
     0020-multigenerational-lru-v1.patch
     # Nuvoton nc677x driver
@@ -95,7 +95,7 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver/.${_sub}/}.t
     # vmlinux.profdata
     #
     # reverts
-    drm-amdgpu-reuse-current-context.revert
+    #
 )
 
 validpgpkeys=(
@@ -110,7 +110,7 @@ sha256sums=('04f07b54f0d40adfab02ee6cbd2a942c96728d87c1ef9e120d0cb9ba3fe067b4'
             '6f4d0e174b1036a2aca5a828c50461aaffa8d7c602985dab1ac7b510a359bddb'
             'ab010dc5ef6ce85d352956e5996d242246ecd0912b30f0b72025c38eadff8cd5'
             '8f357fab1c5b3e81240b543a6643fdbca1d8591f5dd18bc18e38ae992d78944c'
-            'ffd5b4bbb0e9e8306d1ae6faf62f1ef878bfa50ddba4ab959351f3fedc85654a'
+            '86d78bc34b1846fd0559c39b53d831aa6653c0c70f8bee3fb43f36d0985113ad'
             '9b0c200b0dadfcfb1b3c42acd0c007e1d582a86abc6b04f3096e0535c8784ab6'
             '3d38fc4052b999b67aaed9fe9a4ba6ffd778ffbf7e94a66d5577391dbd08d12a'
             '0a05bbb282502db210f8ab843a5c3f39b847af5303fb7bd5a8655686cf76c1b7'
@@ -123,24 +123,23 @@ sha256sums=('04f07b54f0d40adfab02ee6cbd2a942c96728d87c1ef9e120d0cb9ba3fe067b4'
             '623a3b02b980fcd52bc7d230be1661ada7b557e3cd83c0560666e1f010bd3509'
             '9e86bfb28c4c9a30a116f57c24d57cf7488df2755198425522564b4e8f8015e7'
             'db3b8d090f2b9c537f467eb0b5433127c9272824a7c97ebf3c7b8521ceafb0a9'
-            '13acb14484a79496a07f65831686887854c89ed50d662682052fb025d99c5b5e'
+            '4214820327a243167570b54611830d7a227f79c398c256ba40924fab077e99f6'
             'a652bf7985cd0633ee12e61efb9dd898f28468e93caa852e210923fed92724fb'
             '49b29307ee96f85db5949866fd2f5a76502dd5be7564771febfe57c807b4f740'
             '1922dca263ce9f9790fd37e8ead35e32eea0df0391b1d83c6dcef911411d807a'
             '1523298b9c29fa80ecc945982b7e450b5a9128054f91bce0fc596141ed3d1df2'
-            '4fd11c312808c3dbcff6cef079de397928249fe23b6654c745ceb3432f673c60'
+            '8385f81f7642daa3863261104dda612e5184c1fe29a6413c2176ea8e07107267'
             'ca2cd10fc86d3347d98da60e11b8ca02544d62d4da6179b9555fc92cacfb6838'
             'e7d724ac15daf428aa1e6a03737e5c1d040892d55fda8a66897fcac9323f285c'
-            '6b0680296176bbed4cd158525b9147ff952b4f71364a3d739425d6fa2b872030'
+            '7c4ca00789ac3ebca1f94e81319027c39a229d2b4c07874f337e4fb94c9c737c'
             '239307e0018ab2405b9afaa7d315ee3352b83819a3c75b65951749b52a3247d2'
             '7fd689f4ec88364d1ac00007e6f1e273ee9b53cae187e0f70e7f810303dc9303'
             'f7a36231b794022d49e53f464d25e48f2eebf6266c2cbe5756c63aa3bf03bae7'
             'acca50a9ffee480f29bd7de6e8b5963dc0d37d3103871d75bcffdb2acce6c82d'
             '4c0beb1f181e7ee22e978f447aaccc3bd7f326e861a5afb5798922b1e7efc2ec'
             '02d2c0e6b2459d4dbd6d4cecb3b269545a78b86cc9d2d3a0fda80bb3c3ee7604'
-            'a231aebaa262c60f5f0151819db4b06e92986d5c81e8e0a90e7089a0ac9d454c'
-            '24a024268e8ac2548078ad7ea3445a2331d21df6eb01f5caf9b1b42caf4241bb'
-            'f2f32f91f33ba0179c5ebdff8e672203d99ca1b517f1fe6d9c8c3933dad42817')
+            '33752d734f2276e5f396da3512a7a7f47b8bb6037b70d17120fd5c30f807a8cd'
+            '24a024268e8ac2548078ad7ea3445a2331d21df6eb01f5caf9b1b42caf4241bb')
 
 export KBUILD_BUILD_USER=$pkgbase
 export KBUILD_BUILD_HOST=eos
@@ -194,8 +193,7 @@ prepare() {
         	patch -Np1 -i "../${filename}"
   	fi
   done
-  echo -e "\n---- Reverts:"
-  patch -Np1 -R -i "../drm-amdgpu-reuse-current-context.revert"
+  #echo -e "\n---- Reverts:" # add reverts here
 
   # kernel config
   echo -e "\n${TB}* KERNEL CONFIGURATION${TN}"

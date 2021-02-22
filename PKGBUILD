@@ -95,7 +95,7 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver/.${_sub}/}.t
     # vmlinux.profdata
     #
     # reverts
-    #
+    sched-fair-update_pick_idlest.revert
 )
 
 validpgpkeys=(
@@ -139,7 +139,8 @@ sha256sums=('04f07b54f0d40adfab02ee6cbd2a942c96728d87c1ef9e120d0cb9ba3fe067b4'
             '4c0beb1f181e7ee22e978f447aaccc3bd7f326e861a5afb5798922b1e7efc2ec'
             '02d2c0e6b2459d4dbd6d4cecb3b269545a78b86cc9d2d3a0fda80bb3c3ee7604'
             '33752d734f2276e5f396da3512a7a7f47b8bb6037b70d17120fd5c30f807a8cd'
-            '24a024268e8ac2548078ad7ea3445a2331d21df6eb01f5caf9b1b42caf4241bb')
+            '24a024268e8ac2548078ad7ea3445a2331d21df6eb01f5caf9b1b42caf4241bb'
+            'cd96250876c30af9a1b5a7f8191ab8390842c993bd92f6987fb661e3edf1941e')
 
 export KBUILD_BUILD_USER=$pkgbase
 export KBUILD_BUILD_HOST=eos
@@ -193,7 +194,8 @@ prepare() {
         	patch -Np1 -i "../${filename}"
   	fi
   done
-  #echo -e "\n---- Reverts:" # add reverts here
+  echo -e "\n---- Reverts:" # add reverts here
+  patch -Rp1 -i "../sched-fair-update_pick_idlest.revert"
 
   # kernel config
   echo -e "\n${TB}* KERNEL CONFIGURATION${TN}"

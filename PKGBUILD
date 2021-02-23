@@ -8,10 +8,10 @@ pkgbase=linux511-vd
 pkgname=('linux511-vd' 'linux511-vd-headers')
 _basekernel=5.11
 _kernelname=-vd
-_sub=0
+_sub=1
 #_rc=rc7
 pkgver=${_basekernel}.${_sub}
-pkgrel=6
+pkgrel=1
 _archpatch=20210219
 _prjc="r0"
 _stablequeue=a1028684e3
@@ -20,7 +20,7 @@ url="http://www.kernel.org/"
 license=('GPL2')
 makedepends=('xmlto' 'docbook-xsl' 'kmod' 'inetutils' 'bc' 'elfutils' 'git' 'libelf')
 options=('!strip')
-source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver/.${_sub}/}.tar.{xz,sign}
+source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver}.tar.{xz,sign}
     #https://git.kernel.org/torvalds/t/linux-${_basekernel}-${_rc}.tar.gz
     # the main kernel config files
     'config.x86_64' 'config.x270' 'config.zen2' 'x509.genkey' "${pkgbase}.preset"
@@ -103,7 +103,7 @@ validpgpkeys=(
   '647F28654894E3BD457199BE38DBBDC86092693E'  # Greg Kroah-Hartman
 )
 
-sha256sums=('04f07b54f0d40adfab02ee6cbd2a942c96728d87c1ef9e120d0cb9ba3fe067b4'
+sha256sums=('057d6522edf930fe52271cd616ae918fdb591a60809c9c01fa698041f764b9be'
             'SKIP'
             '17f421009acc3ea17e53e142d373ddb10394571068f5993588a33e90dd5ead2a'
             '22d13eafd7816579a4b3cdc20216d433246ecbf22a5098036211da4ddbae10cf'
@@ -177,7 +177,7 @@ TN=$(tput sgr0)
 
 prepare() {
 
-  cd "${srcdir}/linux-${_basekernel}"
+  cd "${srcdir}/linux-${pkgver}"
 
   echo "-${_kernelname/-/}" > localversion.10-pkgname
   echo "-${pkgrel}" > localversion.20-pkgrel
@@ -237,7 +237,7 @@ prepare() {
 }
 
 build() {
-  cd "${srcdir}/linux-${_basekernel}"
+  cd "${srcdir}/linux-${pkgver}"
 
   # copy pgo profile data
   # cp $srcdir/vmlinux.profdata ./
@@ -256,7 +256,7 @@ package_linux511-vd() {
   provides=(VIRTUALBOX-GUEST-MODULES)
   replaces=(linux511-vd-virtualbox-guest-modules)
 
-  cd "${srcdir}/linux-${_basekernel}"
+  cd "${srcdir}/linux-${pkgver}"
 
   local kernver="$(<version)"
   local modulesdir="$pkgdir/usr/lib/modules/$kernver"
@@ -295,7 +295,7 @@ package_linux511-vd() {
 package_linux511-vd-headers() {
   pkgdesc="Header files and scripts for building modules for ${pkgbase/linux/Linux} vd kernel"
 
-  cd "${srcdir}/linux-${_basekernel}"
+  cd "${srcdir}/linux-${pkgver}"
   local kernver="$(<version)"
   local _builddir="${pkgdir}/usr/lib/modules/${kernver}/build"
 

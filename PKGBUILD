@@ -14,7 +14,7 @@ pkgver=${_basekernel}.${_sub}
 pkgrel=1
 _archpatch=20210219
 _prjc="r0"
-_stablequeue=a1028684e3
+_stablequeue=163a9b33aa
 arch=('x86_64')
 url="http://www.kernel.org/"
 license=('GPL2')
@@ -26,7 +26,7 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver}.tar.{xz,sig
     'config.x86_64' 'config.x270' 'config.zen2' 'x509.genkey' "${pkgbase}.preset"
     #
     # Prepatch from stable-queue
-    # "prepatch-${_basekernel/./}-g${_stablequeue}.patch"
+    "prepatch-${_basekernel/./}-g${_stablequeue}.patch"
     #
     # Arch patches
     0001-arch-patches511-${_archpatch}.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11/arch-patches-v4/0001-arch-patches.patch
@@ -61,7 +61,7 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver}.tar.{xz,sig
     # fs buffer fix
     0018-fs-buffer-revoke-lru-when-trying-to-drop-buffers-v4.patch
     # btrfs patches
-    0019-btrfs-patches-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11/btrfs-patches-v2/0001-btrfs-patches.patch
+    0019-btrfs-patches-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11/btrfs-patches-v3/0001-btrfs-patches.patch
     # multigenerational lru by google
     0020-multigenerational-lru-v1.patch
     # Nuvoton nc677x driver
@@ -110,6 +110,7 @@ sha256sums=('057d6522edf930fe52271cd616ae918fdb591a60809c9c01fa698041f764b9be'
             '6f4d0e174b1036a2aca5a828c50461aaffa8d7c602985dab1ac7b510a359bddb'
             'ab010dc5ef6ce85d352956e5996d242246ecd0912b30f0b72025c38eadff8cd5'
             '8f357fab1c5b3e81240b543a6643fdbca1d8591f5dd18bc18e38ae992d78944c'
+            'ccaf466e71b2a595450b2e784f27b47bb545f4de244beb469535b6439ec9e8aa'
             '86d78bc34b1846fd0559c39b53d831aa6653c0c70f8bee3fb43f36d0985113ad'
             '9b0c200b0dadfcfb1b3c42acd0c007e1d582a86abc6b04f3096e0535c8784ab6'
             '3d38fc4052b999b67aaed9fe9a4ba6ffd778ffbf7e94a66d5577391dbd08d12a'
@@ -128,7 +129,7 @@ sha256sums=('057d6522edf930fe52271cd616ae918fdb591a60809c9c01fa698041f764b9be'
             '49b29307ee96f85db5949866fd2f5a76502dd5be7564771febfe57c807b4f740'
             '1922dca263ce9f9790fd37e8ead35e32eea0df0391b1d83c6dcef911411d807a'
             '1523298b9c29fa80ecc945982b7e450b5a9128054f91bce0fc596141ed3d1df2'
-            '8385f81f7642daa3863261104dda612e5184c1fe29a6413c2176ea8e07107267'
+            '64cf033faaf056142224baaa92ee6e29d26f8312e22bd0e2b0f16d38454e3e2b'
             'ca2cd10fc86d3347d98da60e11b8ca02544d62d4da6179b9555fc92cacfb6838'
             'e7d724ac15daf428aa1e6a03737e5c1d040892d55fda8a66897fcac9323f285c'
             '7c4ca00789ac3ebca1f94e81319027c39a229d2b4c07874f337e4fb94c9c737c'

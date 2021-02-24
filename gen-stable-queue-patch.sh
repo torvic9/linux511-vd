@@ -3,7 +3,7 @@
 _basekernel=5.11
 _kerndir=$HOME/build/linux511-vd
 
-if [ -d stable-queue ] ;
+if [ -e stable-queue ] ;
 then
   cd stable-queue
   git pull

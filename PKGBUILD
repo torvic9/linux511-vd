@@ -11,7 +11,7 @@ _kernelname=-vd
 _sub=1
 #_rc=rc7
 pkgver=${_basekernel}.${_sub}
-pkgrel=1
+pkgrel=2
 _archpatch=20210219
 _prjc="r0"
 _stablequeue=163a9b33aa
@@ -68,6 +68,10 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver}.tar.{xz,sig
     0021-i2c-nuvoton-nc677x-hwmon-driver-git.patch::https://gitlab.com/CalcProgrammer1/OpenRGB/-/raw/master/OpenRGB.patch
     # cpufreq/acpi fix for Zen
     0022-cpufreq-acpi-set-cpuinfo.max_freq-directly-if-max-boost-is-known.patch
+    # sched/fair fixes
+    0023-move-update-blocked-load-outside-newidle_balance.patch
+    # async initramfs unpacking
+    0024-init-initramfs.c-allow-asynchronous-unpacking.patch
     #
     # futex_wait_multiple
     1001-futex-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11/futex-trunk-patches/0001-futex-resync-from-gitlab.collabora.com.patch
@@ -133,6 +137,8 @@ sha256sums=('057d6522edf930fe52271cd616ae918fdb591a60809c9c01fa698041f764b9be'
             'ca2cd10fc86d3347d98da60e11b8ca02544d62d4da6179b9555fc92cacfb6838'
             'e7d724ac15daf428aa1e6a03737e5c1d040892d55fda8a66897fcac9323f285c'
             '7c4ca00789ac3ebca1f94e81319027c39a229d2b4c07874f337e4fb94c9c737c'
+            '36335d6fa322427d4771804f4ef39417feda966a10da275ef0311e61f1193b1c'
+            'ebb1cc8dd0bdcde7246aacee531d06a5b035ccd481f4c306f2316010a7be2282'
             '239307e0018ab2405b9afaa7d315ee3352b83819a3c75b65951749b52a3247d2'
             '7fd689f4ec88364d1ac00007e6f1e273ee9b53cae187e0f70e7f810303dc9303'
             'f7a36231b794022d49e53f464d25e48f2eebf6266c2cbe5756c63aa3bf03bae7'
@@ -164,7 +170,7 @@ if [[ ${_clang} -eq 1 ]]; then
 	'9002-clang-lto-20210217.patch'
 	#'9003-clang-pgo-v7.patch' # pgo is still very experimental
 	)
-	sha256sums+=('6facba496859c28160d5872800834af28fb152feaf07d4cfa03cf1fc611bcd67'
+	sha256sums+=('a9ec2ef0a19f61ef5ecb7ab09fbc6174c784d59ec01e16d8297ff2bf1c29eefa'
 	'2a55be336d1b8df8dda423efd7793c96cc144002e3e9f8c7b972ea28d435175c'
 	#'ea2b7feb663faa177a8aad36f99e68cffc4a95ce7a0fd321a0d7c86cb66204ea'
 	)

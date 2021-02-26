@@ -11,7 +11,7 @@ _kernelname=-vd
 _sub=1
 #_rc=rc7
 pkgver=${_basekernel}.${_sub}
-pkgrel=2
+pkgrel=3
 _archpatch=20210219
 _prjc="r0"
 _stablequeue=163a9b33aa
@@ -49,7 +49,7 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver}.tar.{xz,sig
     0012-block-bfq-fixes-and-improvements.patch
     # tip:sched/core
     0013-tip-sched-core-20210205.patch
-    #0013-tip-sched-core-no-dyn-preempt-20210205.patch # for use with ProjectC
+    # 0013-tip-sched-core-no-dyn-preempt-20210205.patch # for use with ProjectC
     # sched balance tweaks
     0014-sched-fair-misfit-task-load-balance-tweaks-v2.patch
     # rcu fixes
@@ -91,15 +91,20 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver}.tar.{xz,sig
     #
     # Project C (BMQ+PDS)
     #3001-projectc511-${_prjc}-orig.patch::https://gitlab.com/alfredchen/linux-prjc/uploads/12a5a2a5f6be6a62a2e069e9b4a3b99d/prjc_v5.11-r0.patch
-    #3001-projectc511-${_prjc}-vd.patch # for use with tip
+    # 3001-projectc511-${_prjc}-vd.patch # for use with tip
     # CacULE
-    # 3002-cacule-510rdb.patch::https://raw.githubusercontent.com/hamadmarri/cacule-cpu-scheduler/master/patches/CacULE/v5.10/cacule5.10-rdb.patch
     #
     # pgo profile data
     # vmlinux.profdata
     #
     # reverts
     sched-fair-update_pick_idlest.revert
+    # clang
+    9001-objtool-fixes-jp.patch
+    9002-clang-lto-20210217.patch
+    # 9003-clang-pgo-v7.patch # pgo is still very experimental
+    # speed improvement with trim_unused_ksyms, with needed patches from next
+    9004-kbuild-build-speed-improvment-of-trim_unused_ksyms.patch
 )
 
 validpgpkeys=(
@@ -147,7 +152,10 @@ sha256sums=('057d6522edf930fe52271cd616ae918fdb591a60809c9c01fa698041f764b9be'
             '02d2c0e6b2459d4dbd6d4cecb3b269545a78b86cc9d2d3a0fda80bb3c3ee7604'
             '33752d734f2276e5f396da3512a7a7f47b8bb6037b70d17120fd5c30f807a8cd'
             '24a024268e8ac2548078ad7ea3445a2331d21df6eb01f5caf9b1b42caf4241bb'
-            'cd96250876c30af9a1b5a7f8191ab8390842c993bd92f6987fb661e3edf1941e')
+            'cd96250876c30af9a1b5a7f8191ab8390842c993bd92f6987fb661e3edf1941e'
+            'a9ec2ef0a19f61ef5ecb7ab09fbc6174c784d59ec01e16d8297ff2bf1c29eefa'
+            '2a55be336d1b8df8dda423efd7793c96cc144002e3e9f8c7b972ea28d435175c'
+            '4f41f8e7ad3ce64a14ef553662b350bc3be5c68dad22a1226c55fa71d0212bf8')
 
 export KBUILD_BUILD_USER=$pkgbase
 export KBUILD_BUILD_HOST=eos
@@ -166,14 +174,6 @@ _clang=0
 if [[ ${_clang} -eq 1 ]]; then
 	LLVMOPTS="LLVM=1 LLVM_IAS=1"
 	CLANGOPTS="CC=clang LD=ld.lld"
-	source+=('9001-objtool-fixes-jp.patch'
-	'9002-clang-lto-20210217.patch'
-	#'9003-clang-pgo-v7.patch' # pgo is still very experimental
-	)
-	sha256sums+=('a9ec2ef0a19f61ef5ecb7ab09fbc6174c784d59ec01e16d8297ff2bf1c29eefa'
-	'2a55be336d1b8df8dda423efd7793c96cc144002e3e9f8c7b972ea28d435175c'
-	#'ea2b7feb663faa177a8aad36f99e68cffc4a95ce7a0fd321a0d7c86cb66204ea'
-	)
 else
 	LLVMOPTS=""
 	CLANGOPTS=""

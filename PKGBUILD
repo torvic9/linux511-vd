@@ -8,10 +8,10 @@ pkgbase=linux511-vd
 pkgname=('linux511-vd' 'linux511-vd-headers')
 _basekernel=5.11
 _kernelname=-vd
-_sub=1
+_sub=2
 #_rc=rc7
 pkgver=${_basekernel}.${_sub}
-pkgrel=3
+pkgrel=1
 _archpatch=20210219
 _prjc="r0"
 _stablequeue=163a9b33aa
@@ -26,7 +26,7 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver}.tar.{xz,sig
     'config.x86_64' 'config.x270' 'config.zen2' 'x509.genkey' "${pkgbase}.preset"
     #
     # Prepatch from stable-queue
-    "prepatch-${_basekernel/./}-g${_stablequeue}.patch"
+    #"prepatch-${_basekernel/./}-g${_stablequeue}.patch"
     #
     # Arch patches
     0001-arch-patches511-${_archpatch}.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11/arch-patches-v4/0001-arch-patches.patch
@@ -68,7 +68,7 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver}.tar.{xz,sig
     0021-i2c-nuvoton-nc677x-hwmon-driver-git.patch::https://gitlab.com/CalcProgrammer1/OpenRGB/-/raw/master/OpenRGB.patch
     # cpufreq/acpi fix for Zen
     0022-cpufreq-acpi-set-cpuinfo.max_freq-directly-if-max-boost-is-known.patch
-    # sched/fair fixes
+    # sched/fair fixes - disable when using ProjectC
     0023-move-update-blocked-load-outside-newidle_balance.patch
     # async initramfs unpacking
     0024-init-initramfs.c-allow-asynchronous-unpacking.patch
@@ -90,7 +90,7 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver}.tar.{xz,sig
     2007-ntfs-rw-gpl-driver-implementation-by-paragon-v21.patch
     #
     # Project C (BMQ+PDS)
-    #3001-projectc511-${_prjc}-orig.patch::https://gitlab.com/alfredchen/linux-prjc/uploads/12a5a2a5f6be6a62a2e069e9b4a3b99d/prjc_v5.11-r0.patch
+    # 3001-projectc511-${_prjc}-orig.patch::https://gitlab.com/alfredchen/linux-prjc/uploads/12a5a2a5f6be6a62a2e069e9b4a3b99d/prjc_v5.11-r0.patch
     # 3001-projectc511-${_prjc}-vd.patch # for use with tip
     # CacULE
     #
@@ -112,14 +112,13 @@ validpgpkeys=(
   '647F28654894E3BD457199BE38DBBDC86092693E'  # Greg Kroah-Hartman
 )
 
-sha256sums=('057d6522edf930fe52271cd616ae918fdb591a60809c9c01fa698041f764b9be'
+sha256sums=('904a5b3cbaf5264ef8da6c7a5445fa7ea19168ad77fb83a7cc1b8ba95d52d0a0'
             'SKIP'
             '17f421009acc3ea17e53e142d373ddb10394571068f5993588a33e90dd5ead2a'
             '22d13eafd7816579a4b3cdc20216d433246ecbf22a5098036211da4ddbae10cf'
             '6f4d0e174b1036a2aca5a828c50461aaffa8d7c602985dab1ac7b510a359bddb'
             'ab010dc5ef6ce85d352956e5996d242246ecd0912b30f0b72025c38eadff8cd5'
             '8f357fab1c5b3e81240b543a6643fdbca1d8591f5dd18bc18e38ae992d78944c'
-            'ccaf466e71b2a595450b2e784f27b47bb545f4de244beb469535b6439ec9e8aa'
             '86d78bc34b1846fd0559c39b53d831aa6653c0c70f8bee3fb43f36d0985113ad'
             '9b0c200b0dadfcfb1b3c42acd0c007e1d582a86abc6b04f3096e0535c8784ab6'
             '3d38fc4052b999b67aaed9fe9a4ba6ffd778ffbf7e94a66d5577391dbd08d12a'
@@ -155,7 +154,7 @@ sha256sums=('057d6522edf930fe52271cd616ae918fdb591a60809c9c01fa698041f764b9be'
             'cd96250876c30af9a1b5a7f8191ab8390842c993bd92f6987fb661e3edf1941e'
             'a9ec2ef0a19f61ef5ecb7ab09fbc6174c784d59ec01e16d8297ff2bf1c29eefa'
             '2a55be336d1b8df8dda423efd7793c96cc144002e3e9f8c7b972ea28d435175c'
-            '4f41f8e7ad3ce64a14ef553662b350bc3be5c68dad22a1226c55fa71d0212bf8')
+            '3b59a65e179e79b7372c451bdaf8f41ccc336615e492340f7d65b00e12c49b3d')
 
 export KBUILD_BUILD_USER=$pkgbase
 export KBUILD_BUILD_HOST=eos

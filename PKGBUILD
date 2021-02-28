@@ -11,10 +11,10 @@ _kernelname=-vd
 _sub=2
 #_rc=rc7
 pkgver=${_basekernel}.${_sub}
-pkgrel=1
-_archpatch=20210219
+pkgrel=2
+_archpatch=20210225
 _prjc="r0"
-_stablequeue=163a9b33aa
+_stablequeue=143abe5692
 arch=('x86_64')
 url="http://www.kernel.org/"
 license=('GPL2')
@@ -26,10 +26,10 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver}.tar.{xz,sig
     'config.x86_64' 'config.x270' 'config.zen2' 'x509.genkey' "${pkgbase}.preset"
     #
     # Prepatch from stable-queue
-    #"prepatch-${_basekernel/./}-g${_stablequeue}.patch"
+    "prepatch-${_basekernel/./}-g${_stablequeue}.patch"
     #
     # Arch patches
-    0001-arch-patches511-${_archpatch}.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11/arch-patches-v4/0001-arch-patches.patch
+    0001-arch-patches511-${_archpatch}.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11/arch-patches-v5/0001-arch-patches.patch
     # CPU patches
     0002-graysky-cpu-optimizations.patch
     0003-enable-O3-for-all-archs-and-add-option-for-O1.patch
@@ -119,7 +119,8 @@ sha256sums=('904a5b3cbaf5264ef8da6c7a5445fa7ea19168ad77fb83a7cc1b8ba95d52d0a0'
             '6f4d0e174b1036a2aca5a828c50461aaffa8d7c602985dab1ac7b510a359bddb'
             'ab010dc5ef6ce85d352956e5996d242246ecd0912b30f0b72025c38eadff8cd5'
             '8f357fab1c5b3e81240b543a6643fdbca1d8591f5dd18bc18e38ae992d78944c'
-            '86d78bc34b1846fd0559c39b53d831aa6653c0c70f8bee3fb43f36d0985113ad'
+            '4dffeafd4d2ce1a908245059170c50ba1861bbe4482f902e33c42e2e53e40d69'
+            '24e3f40bdc141f0ba2cca7c0c98cdcda13270be50757f7aef13f4035c5d5f396'
             '9b0c200b0dadfcfb1b3c42acd0c007e1d582a86abc6b04f3096e0535c8784ab6'
             '3d38fc4052b999b67aaed9fe9a4ba6ffd778ffbf7e94a66d5577391dbd08d12a'
             '0a05bbb282502db210f8ab843a5c3f39b847af5303fb7bd5a8655686cf76c1b7'

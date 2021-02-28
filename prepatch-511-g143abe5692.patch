@@ -1,0 +1,1341 @@
+
+From 3c4fa46b30c551b1df2fb1574a684f68bc22067c Mon Sep 17 00:00:00 2001
+From: Nick Desaulniers <ndesaulniers@google.com>
+Date: Fri, 5 Feb 2021 12:22:18 -0800
+Subject: vmlinux.lds.h: add DWARF v5 sections
+
+From: Nick Desaulniers <ndesaulniers@google.com>
+
+commit 3c4fa46b30c551b1df2fb1574a684f68bc22067c upstream.
+
+We expect toolchains to produce these new debug info sections as part of
+DWARF v5. Add explicit placements to prevent the linker warnings from
+--orphan-section=warn.
+
+Compilers may produce such sections with explicit -gdwarf-5, or based on
+the implicit default version of DWARF when -g is used via DEBUG_INFO.
+This implicit default changes over time, and has changed to DWARF v5
+with GCC 11.
+
+.debug_sup was mentioned in review, but without compilers producing it
+today, let's wait to add it until it becomes necessary.
+
+Cc: stable@vger.kernel.org
+Link: https://bugzilla.redhat.com/show_bug.cgi?id=1922707
+Reported-by: Chris Murphy <lists@colorremedies.com>
+Suggested-by: Fangrui Song <maskray@google.com>
+Reviewed-by: Nathan Chancellor <nathan@kernel.org>
+Reviewed-by: Mark Wielaard <mark@klomp.org>
+Tested-by: Sedat Dilek <sedat.dilek@gmail.com>
+Signed-off-by: Nick Desaulniers <ndesaulniers@google.com>
+Signed-off-by: Masahiro Yamada <masahiroy@kernel.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ include/asm-generic/vmlinux.lds.h |    7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+--- a/include/asm-generic/vmlinux.lds.h
++++ b/include/asm-generic/vmlinux.lds.h
+@@ -828,8 +828,13 @@
+ 		/* DWARF 4 */						\
+ 		.debug_types	0 : { *(.debug_types) }			\
+ 		/* DWARF 5 */						\
++		.debug_addr	0 : { *(.debug_addr) }			\
++		.debug_line_str	0 : { *(.debug_line_str) }		\
++		.debug_loclists	0 : { *(.debug_loclists) }		\
+ 		.debug_macro	0 : { *(.debug_macro) }			\
+-		.debug_addr	0 : { *(.debug_addr) }
++		.debug_names	0 : { *(.debug_names) }			\
++		.debug_rnglists	0 : { *(.debug_rnglists) }		\
++		.debug_str_offsets	0 : { *(.debug_str_offsets) }
+ 
+ /* Stabs debugging sections. */
+ #define STABS_DEBUG							\
+From dcfde1635e764fd69cc756c7780d144e288608e9 Mon Sep 17 00:00:00 2001
+From: Stefano Garzarella <sgarzare@redhat.com>
+Date: Mon, 8 Feb 2021 17:17:41 +0100
+Subject: vdpa/mlx5: fix param validation in mlx5_vdpa_get_config()
+
+From: Stefano Garzarella <sgarzare@redhat.com>
+
+commit dcfde1635e764fd69cc756c7780d144e288608e9 upstream.
+
+It's legal to have 'offset + len' equal to
+sizeof(struct virtio_net_config), since 'ndev->config' is a
+'struct virtio_net_config', so we can safely copy its content under
+this condition.
+
+Fixes: 1a86b377aa21 ("vdpa/mlx5: Add VDPA driver for supported mlx5 devices")
+Cc: stable@vger.kernel.org
+Signed-off-by: Stefano Garzarella <sgarzare@redhat.com>
+Link: https://lore.kernel.org/r/20210208161741.104939-1-sgarzare@redhat.com
+Signed-off-by: Michael S. Tsirkin <mst@redhat.com>
+Acked-by: Jason Wang <jasowang@redhat.com>
+Acked-by: Eli Cohen <elic@nvidia.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/vdpa/mlx5/net/mlx5_vnet.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/drivers/vdpa/mlx5/net/mlx5_vnet.c
++++ b/drivers/vdpa/mlx5/net/mlx5_vnet.c
+@@ -1820,7 +1820,7 @@ static void mlx5_vdpa_get_config(struct
+ 	struct mlx5_vdpa_dev *mvdev = to_mvdev(vdev);
+ 	struct mlx5_vdpa_net *ndev = to_mlx5_vdpa_ndev(mvdev);
+ 
+-	if (offset + len < sizeof(struct virtio_net_config))
++	if (offset + len <= sizeof(struct virtio_net_config))
+ 		memcpy(buf, (u8 *)&ndev->config + offset, len);
+ }
+ 
+From bc6de804d36b3709d54fa22bd128cbac91c11526 Mon Sep 17 00:00:00 2001
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Date: Thu, 18 Feb 2021 11:08:17 +0100
+Subject: debugfs: be more robust at handling improper input in debugfs_lookup()
+
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+commit bc6de804d36b3709d54fa22bd128cbac91c11526 upstream.
+
+debugfs_lookup() doesn't like it if it is passed an illegal name
+pointer, or if the filesystem isn't even initialized yet.  If either of
+these happen, it will crash the system, so fix it up by properly testing
+for valid input and that we are up and running before trying to find a
+file in the filesystem.
+
+Cc: "Rafael J. Wysocki" <rafael@kernel.org>
+Cc: stable <stable@vger.kernel.org>
+Reported-by: Michael Walle <michael@walle.cc>
+Tested-by: Michael Walle <michael@walle.cc>
+Tested-by: Marc Zyngier <maz@kernel.org>
+Link: https://lore.kernel.org/r/20210218100818.3622317-1-gregkh@linuxfoundation.org
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ fs/debugfs/inode.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/fs/debugfs/inode.c
++++ b/fs/debugfs/inode.c
+@@ -297,7 +297,7 @@ struct dentry *debugfs_lookup(const char
+ {
+ 	struct dentry *dentry;
+ 
+-	if (IS_ERR(parent))
++	if (!debugfs_initialized() || IS_ERR_OR_NULL(name) || IS_ERR(parent))
+ 		return NULL;
+ 
+ 	if (!parent)
+From 56348560d495d2501e87db559a61de717cd3ab02 Mon Sep 17 00:00:00 2001
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+Date: Thu, 18 Feb 2021 11:08:18 +0100
+Subject: debugfs: do not attempt to create a new file before the filesystem is initalized
+
+From: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+
+commit 56348560d495d2501e87db559a61de717cd3ab02 upstream.
+
+Some subsystems want to add debugfs files at early boot, way before
+debugfs is initialized.  This seems to work somehow as the vfs layer
+will not allow it to happen, but let's be explicit and test to ensure we
+are properly up and running before allowing files to be created.
+
+Cc: "Rafael J. Wysocki" <rafael@kernel.org>
+Cc: stable <stable@vger.kernel.org>
+Reported-by: Michael Walle <michael@walle.cc>
+Reported-by: Marc Zyngier <maz@kernel.org>
+Link: https://lore.kernel.org/r/20210218100818.3622317-2-gregkh@linuxfoundation.org
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ fs/debugfs/inode.c |    3 +++
+ 1 file changed, 3 insertions(+)
+
+--- a/fs/debugfs/inode.c
++++ b/fs/debugfs/inode.c
+@@ -318,6 +318,9 @@ static struct dentry *start_creating(con
+ 	if (!(debugfs_allow & DEBUGFS_ALLOW_API))
+ 		return ERR_PTR(-EPERM);
+ 
++	if (!debugfs_initialized())
++		return ERR_PTR(-ENOENT);
++
+ 	pr_debug("creating file '%s'\n", name);
+ 
+ 	if (IS_ERR(parent))
+From 471b12c43f376d5203dbff0e91316eea11f6f4df Mon Sep 17 00:00:00 2001
+From: Dave Jiang <dave.jiang@intel.com>
+Date: Wed, 10 Feb 2021 13:16:11 -0700
+Subject: driver core: auxiliary bus: Fix calling stage for auxiliary bus init
+
+From: Dave Jiang <dave.jiang@intel.com>
+
+commit 471b12c43f376d5203dbff0e91316eea11f6f4df upstream.
+
+When the auxiliary device code is built into the kernel, it can be executed
+before the auxiliary bus is registered. This causes bus->p to be not
+allocated and triggers a NULL pointer dereference when the auxiliary bus
+device gets added with bus_add_device(). Call the auxiliary_bus_init()
+under driver_init() so the bus is initialized before devices.
+
+Below is the kernel splat for the bug:
+[ 1.948215] BUG: kernel NULL pointer dereference, address: 0000000000000060
+[ 1.950670] #PF: supervisor read access in kernel mode
+[ 1.950670] #PF: error_code(0x0000) - not-present page
+[ 1.950670] PGD 0
+[ 1.950670] Oops: 0000 1 SMP NOPTI
+[ 1.950670] CPU: 0 PID: 1 Comm: swapper/0 Not tainted 5.10.0-intel-nextsvmtest+ #2205
+[ 1.950670] Hardware name: QEMU Standard PC (Q35 + ICH9, 2009), BIOS rel-1.14.0-0-g155821a1990b-prebuilt.qemu.org 04/01/2014
+[ 1.950670] RIP: 0010:bus_add_device+0x64/0x140
+[ 1.950670] Code: 00 49 8b 75 20 48 89 df e8 59 a1 ff ff 41 89 c4 85 c0 75 7b 48 8b 53 50 48 85 d2 75 03 48 8b 13 49 8b 85 a0 00 00 00 48 89 de <48> 8
+78 60 48 83 c7 18 e8 ef d9 a9 ff 41 89 c4 85 c0 75 45 48 8b
+[ 1.950670] RSP: 0000:ff46032ac001baf8 EFLAGS: 00010246
+[ 1.950670] RAX: 0000000000000000 RBX: ff4597f7414aa680 RCX: 0000000000000000
+[ 1.950670] RDX: ff4597f74142bbc0 RSI: ff4597f7414aa680 RDI: ff4597f7414aa680
+[ 1.950670] RBP: ff46032ac001bb10 R08: 0000000000000044 R09: 0000000000000228
+[ 1.950670] R10: ff4597f741141b30 R11: ff4597f740182a90 R12: 0000000000000000
+[ 1.950670] R13: ffffffffa5e936c0 R14: 0000000000000000 R15: 0000000000000000
+[ 1.950670] FS: 0000000000000000(0000) GS:ff4597f7bba00000(0000) knlGS:0000000000000000
+[ 1.950670] CS: 0010 DS: 0000 ES: 0000 CR0: 0000000080050033
+[ 1.950670] CR2: 0000000000000060 CR3: 000000002140c001 CR4: 0000000000f71ef0
+[ 1.950670] DR0: 0000000000000000 DR1: 0000000000000000 DR2: 0000000000000000
+[ 1.950670] DR3: 0000000000000000 DR6: 00000000fffe07f0 DR7: 0000000000000400
+[ 1.950670] PKRU: 55555554
+[ 1.950670] Call Trace:
+[ 1.950670] device_add+0x3ee/0x850
+[ 1.950670] __auxiliary_device_add+0x47/0x60
+[ 1.950670] idxd_pci_probe+0xf77/0x1180
+[ 1.950670] local_pci_probe+0x4a/0x90
+[ 1.950670] pci_device_probe+0xff/0x1b0
+[ 1.950670] really_probe+0x1cf/0x440
+[ 1.950670] ? rdinit_setup+0x31/0x31
+[ 1.950670] driver_probe_device+0xe8/0x150
+[ 1.950670] device_driver_attach+0x58/0x60
+[ 1.950670] __driver_attach+0x8f/0x150
+[ 1.950670] ? device_driver_attach+0x60/0x60
+[ 1.950670] ? device_driver_attach+0x60/0x60
+[ 1.950670] bus_for_each_dev+0x79/0xc0
+[ 1.950670] ? kmem_cache_alloc_trace+0x323/0x430
+[ 1.950670] driver_attach+0x1e/0x20
+[ 1.950670] bus_add_driver+0x154/0x1f0
+[ 1.950670] driver_register+0x70/0xc0
+[ 1.950670] __pci_register_driver+0x54/0x60
+[ 1.950670] idxd_init_module+0xe2/0xfc
+[ 1.950670] ? idma64_platform_driver_init+0x19/0x19
+[ 1.950670] do_one_initcall+0x4a/0x1e0
+[ 1.950670] kernel_init_freeable+0x1fc/0x25c
+[ 1.950670] ? rest_init+0xba/0xba
+[ 1.950670] kernel_init+0xe/0x116
+[ 1.950670] ret_from_fork+0x1f/0x30
+[ 1.950670] Modules linked in:
+[ 1.950670] CR2: 0000000000000060
+[ 1.950670] --[ end trace cd7d1b226d3ca901 ]--
+
+Fixes: 7de3697e9cbd ("Add auxiliary bus support")
+Reported-by: Jacob Pan <jacob.jun.pan@intel.com>
+Reviewed-by: Dan Williams <dan.j.williams@intel.com>
+Acked-by: Dave Ertman <david.m.ertman@intel.com>
+Signed-off-by: Dave Jiang <dave.jiang@intel.com>
+Link: https://lore.kernel.org/r/20210210201611.1611074-1-dave.jiang@intel.com
+Cc: stable <stable@vger.kernel.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/base/auxiliary.c |   13 +++----------
+ drivers/base/base.h      |    5 +++++
+ drivers/base/init.c      |    1 +
+ 3 files changed, 9 insertions(+), 10 deletions(-)
+
+--- a/drivers/base/auxiliary.c
++++ b/drivers/base/auxiliary.c
+@@ -15,6 +15,7 @@
+ #include <linux/pm_runtime.h>
+ #include <linux/string.h>
+ #include <linux/auxiliary_bus.h>
++#include "base.h"
+ 
+ static const struct auxiliary_device_id *auxiliary_match_id(const struct auxiliary_device_id *id,
+ 							    const struct auxiliary_device *auxdev)
+@@ -260,19 +261,11 @@ void auxiliary_driver_unregister(struct
+ }
+ EXPORT_SYMBOL_GPL(auxiliary_driver_unregister);
+ 
+-static int __init auxiliary_bus_init(void)
++void __init auxiliary_bus_init(void)
+ {
+-	return bus_register(&auxiliary_bus_type);
++	WARN_ON(bus_register(&auxiliary_bus_type));
+ }
+ 
+-static void __exit auxiliary_bus_exit(void)
+-{
+-	bus_unregister(&auxiliary_bus_type);
+-}
+-
+-module_init(auxiliary_bus_init);
+-module_exit(auxiliary_bus_exit);
+-
+ MODULE_LICENSE("GPL v2");
+ MODULE_DESCRIPTION("Auxiliary Bus");
+ MODULE_AUTHOR("David Ertman <david.m.ertman@intel.com>");
+--- a/drivers/base/base.h
++++ b/drivers/base/base.h
+@@ -119,6 +119,11 @@ static inline int hypervisor_init(void)
+ extern int platform_bus_init(void);
+ extern void cpu_dev_init(void);
+ extern void container_dev_init(void);
++#ifdef CONFIG_AUXILIARY_BUS
++extern void auxiliary_bus_init(void);
++#else
++static inline void auxiliary_bus_init(void) { }
++#endif
+ 
+ struct kobject *virtual_device_parent(struct device *dev);
+ 
+--- a/drivers/base/init.c
++++ b/drivers/base/init.c
+@@ -32,6 +32,7 @@ void __init driver_init(void)
+ 	 */
+ 	of_core_init();
+ 	platform_bus_init();
++	auxiliary_bus_init();
+ 	cpu_dev_init();
+ 	memory_dev_init();
+ 	container_dev_init();
+From 3f901c81dfad6930de5d4e6b582c4fde880cdada Mon Sep 17 00:00:00 2001
+From: "Ahmed S. Darwish" <a.darwish@linutronix.de>
+Date: Mon, 18 Jan 2021 11:09:37 +0100
+Subject: scsi: libsas: docs: Remove notify_ha_event()
+
+From: Ahmed S. Darwish <a.darwish@linutronix.de>
+
+commit 3f901c81dfad6930de5d4e6b582c4fde880cdada upstream.
+
+The ->notify_ha_event() hook has long been removed from the libsas event
+interface.
+
+Remove it from documentation.
+
+Link: https://lore.kernel.org/r/20210118100955.1761652-2-a.darwish@linutronix.de
+Fixes: 042ebd293b86 ("scsi: libsas: kill useless ha_event and do some cleanup")
+Cc: stable@vger.kernel.org
+Reviewed-by: John Garry <john.garry@huawei.com>
+Reviewed-by: Jack Wang <jinpu.wang@cloud.ionos.com>
+Signed-off-by: Ahmed S. Darwish <a.darwish@linutronix.de>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ Documentation/scsi/libsas.rst |    1 -
+ 1 file changed, 1 deletion(-)
+
+--- a/Documentation/scsi/libsas.rst
++++ b/Documentation/scsi/libsas.rst
+@@ -189,7 +189,6 @@ num_phys
+ The event interface::
+ 
+ 	/* LLDD calls these to notify the class of an event. */
+-	void (*notify_ha_event)(struct sas_ha_struct *, enum ha_event);
+ 	void (*notify_port_event)(struct sas_phy *, enum port_event);
+ 	void (*notify_phy_event)(struct sas_phy *, enum phy_event);
+ 
+From 044c218b04503858ca4e17f61899c8baa0ae9ba1 Mon Sep 17 00:00:00 2001
+From: Quinn Tran <qutran@marvell.com>
+Date: Mon, 11 Jan 2021 01:31:32 -0800
+Subject: scsi: qla2xxx: Fix mailbox Ch erroneous error
+
+From: Quinn Tran <qutran@marvell.com>
+
+commit 044c218b04503858ca4e17f61899c8baa0ae9ba1 upstream.
+
+Mailbox Ch/dump ram extend expects mb register 10 to be set. If not
+set/clear, firmware can pick up garbage from previous invocation of this
+mailbox. Example: mctp dump can set mb10.  On subsequent flash read which
+use mailbox cmd Ch, mb10 can retain previous value.
+
+Link: https://lore.kernel.org/r/20210111093134.1206-6-njavali@marvell.com
+Cc: stable@vger.kernel.org
+Reviewed-by: Himanshu Madhani <himanshu.madhani@oracle.com>
+Signed-off-by: Quinn Tran <qutran@marvell.com>
+Signed-off-by: Nilesh Javali <njavali@marvell.com>
+Signed-off-by: Martin K. Petersen <martin.petersen@oracle.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/scsi/qla2xxx/qla_dbg.c |    1 +
+ drivers/scsi/qla2xxx/qla_mbx.c |    3 ++-
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+
+--- a/drivers/scsi/qla2xxx/qla_dbg.c
++++ b/drivers/scsi/qla2xxx/qla_dbg.c
+@@ -202,6 +202,7 @@ qla24xx_dump_ram(struct qla_hw_data *ha,
+ 		wrt_reg_word(&reg->mailbox0, MBC_DUMP_RISC_RAM_EXTENDED);
+ 		wrt_reg_word(&reg->mailbox1, LSW(addr));
+ 		wrt_reg_word(&reg->mailbox8, MSW(addr));
++		wrt_reg_word(&reg->mailbox10, 0);
+ 
+ 		wrt_reg_word(&reg->mailbox2, MSW(LSD(dump_dma)));
+ 		wrt_reg_word(&reg->mailbox3, LSW(LSD(dump_dma)));
+--- a/drivers/scsi/qla2xxx/qla_mbx.c
++++ b/drivers/scsi/qla2xxx/qla_mbx.c
+@@ -4276,7 +4276,8 @@ qla2x00_dump_ram(scsi_qla_host_t *vha, d
+ 	if (MSW(addr) || IS_FWI2_CAPABLE(vha->hw)) {
+ 		mcp->mb[0] = MBC_DUMP_RISC_RAM_EXTENDED;
+ 		mcp->mb[8] = MSW(addr);
+-		mcp->out_mb = MBX_8|MBX_0;
++		mcp->mb[10] = 0;
++		mcp->out_mb = MBX_10|MBX_8|MBX_0;
+ 	} else {
+ 		mcp->mb[0] = MBC_DUMP_RISC_RAM;
+ 		mcp->out_mb = MBX_0;
+From 93f7a6d818deef69d0ba652d46bae6fbabbf365c Mon Sep 17 00:00:00 2001
+From: Sumit Garg <sumit.garg@linaro.org>
+Date: Fri, 22 Jan 2021 16:35:56 +0530
+Subject: kdb: Make memory allocations more robust
+
+From: Sumit Garg <sumit.garg@linaro.org>
+
+commit 93f7a6d818deef69d0ba652d46bae6fbabbf365c upstream.
+
+Currently kdb uses in_interrupt() to determine whether its library
+code has been called from the kgdb trap handler or from a saner calling
+context such as driver init. This approach is broken because
+in_interrupt() alone isn't able to determine kgdb trap handler entry from
+normal task context. This can happen during normal use of basic features
+such as breakpoints and can also be trivially reproduced using:
+echo g > /proc/sysrq-trigger
+
+We can improve this by adding check for in_dbg_master() instead which
+explicitly determines if we are running in debugger context.
+
+Cc: stable@vger.kernel.org
+Signed-off-by: Sumit Garg <sumit.garg@linaro.org>
+Link: https://lore.kernel.org/r/1611313556-4004-1-git-send-email-sumit.garg@linaro.org
+Signed-off-by: Daniel Thompson <daniel.thompson@linaro.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ kernel/debug/kdb/kdb_private.h |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/kernel/debug/kdb/kdb_private.h
++++ b/kernel/debug/kdb/kdb_private.h
+@@ -230,7 +230,7 @@ extern struct task_struct *kdb_curr_task
+ 
+ #define kdb_task_has_cpu(p) (task_curr(p))
+ 
+-#define GFP_KDB (in_interrupt() ? GFP_ATOMIC : GFP_KERNEL)
++#define GFP_KDB (in_dbg_master() ? GFP_ATOMIC : GFP_KERNEL)
+ 
+ extern void *debug_kmalloc(size_t size, gfp_t flags);
+ extern void debug_kfree(void *);
+From 2f6055c26f1913763eabc66c7c27d0693561e966 Mon Sep 17 00:00:00 2001
+From: Ivan Zaentsev <ivan.zaentsev@wirenboard.ru>
+Date: Thu, 21 Jan 2021 12:30:21 +0300
+Subject: w1: w1_therm: Fix conversion result for negative temperatures
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+From: Ivan Zaentsev <ivan.zaentsev@wirenboard.ru>
+
+commit 2f6055c26f1913763eabc66c7c27d0693561e966 upstream.
+
+DS18B20 device driver returns an incorrect value for negative temperatures
+due to a missing sign-extension in w1_DS18B20_convert_temp().
+
+Fix by using s16 temperature value when converting to int.
+
+Fixes: 9ace0b4dab1c (w1: w1_therm: Add support for GXCAS GX20MH01 device.)
+Cc: stable <stable@vger.kernel.org>
+Reported-by: Paweł Marciniak <sunwire@gmail.com>
+Signed-off-by: Ivan Zaentsev <ivan.zaentsev@wirenboard.ru>
+Link: https://lore.kernel.org/r/20210121093021.224764-1-ivan.zaentsev@wirenboard.ru
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/w1/slaves/w1_therm.c |   22 +++++++++-------------
+ 1 file changed, 9 insertions(+), 13 deletions(-)
+
+--- a/drivers/w1/slaves/w1_therm.c
++++ b/drivers/w1/slaves/w1_therm.c
+@@ -667,28 +667,24 @@ static inline int w1_DS18B20_get_resolut
+  */
+ static inline int w1_DS18B20_convert_temp(u8 rom[9])
+ {
+-	int t;
+-	u32 bv;
++	u16 bv;
++	s16 t;
++
++	/* Signed 16-bit value to unsigned, cpu order */
++	bv = le16_to_cpup((__le16 *)rom);
+ 
+ 	/* Config register bit R2 = 1 - GX20MH01 in 13 or 14 bit resolution mode */
+ 	if (rom[4] & 0x80) {
+-		/* Signed 16-bit value to unsigned, cpu order */
+-		bv = le16_to_cpup((__le16 *)rom);
+-
+ 		/* Insert two temperature bits from config register */
+ 		/* Avoid arithmetic shift of signed value */
+ 		bv = (bv << 2) | (rom[4] & 3);
+-
+-		t = (int) sign_extend32(bv, 17); /* Degrees, lowest bit is 2^-6 */
+-		return (t*1000)/64;  /* Millidegrees */
++		t = (s16) bv;	/* Degrees, lowest bit is 2^-6 */
++		return (int)t * 1000 / 64;	/* Sign-extend to int; millidegrees */
+ 	}
+-
+-	t = (int)le16_to_cpup((__le16 *)rom);
+-	return t*1000/16;
++	t = (s16)bv;	/* Degrees, lowest bit is 2^-4 */
++	return (int)t * 1000 / 16;	/* Sign-extend to int; millidegrees */
+ }
+ 
+-
+-
+ /**
+  * w1_DS18S20_convert_temp() - temperature computation for DS18S20
+  * @rom: data read from device RAM (8 data bytes + 1 CRC byte)
+From 2cfef1971aea6119ee27429181d6cb3383031ac2 Mon Sep 17 00:00:00 2001
+From: Ansuel Smith <ansuelsmth@gmail.com>
+Date: Mon, 19 Oct 2020 18:55:55 +0200
+Subject: PCI: qcom: Use PHY_REFCLK_USE_PAD only for ipq8064
+
+From: Ansuel Smith <ansuelsmth@gmail.com>
+
+commit 2cfef1971aea6119ee27429181d6cb3383031ac2 upstream.
+
+The use of PHY_REFCLK_USE_PAD introduced a regression for apq8064 devices.
+It was tested that while apq doesn't require the padding, ipq SoC must use
+it or the kernel hangs on boot.
+
+Link: https://lore.kernel.org/r/20201019165555.8269-1-ansuelsmth@gmail.com
+Fixes: de3c4bf64897 ("PCI: qcom: Add support for tx term offset for rev 2.1.0")
+Reported-by: Ilia Mirkin <imirkin@alum.mit.edu>
+Signed-off-by: Ilia Mirkin <imirkin@alum.mit.edu>
+Signed-off-by: Ansuel Smith <ansuelsmth@gmail.com>
+Signed-off-by: Lorenzo Pieralisi <lorenzo.pieralisi@arm.com>
+Signed-off-by: Bjorn Helgaas <bhelgaas@google.com>
+Acked-by: Stanimir Varbanov <svarbanov@mm-sol.com>
+Cc: stable@vger.kernel.org	# v4.19+
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/pci/controller/dwc/pcie-qcom.c |    4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+--- a/drivers/pci/controller/dwc/pcie-qcom.c
++++ b/drivers/pci/controller/dwc/pcie-qcom.c
+@@ -398,7 +398,9 @@ static int qcom_pcie_init_2_1_0(struct q
+ 
+ 	/* enable external reference clock */
+ 	val = readl(pcie->parf + PCIE20_PARF_PHY_REFCLK);
+-	val &= ~PHY_REFCLK_USE_PAD;
++	/* USE_PAD is required only for ipq806x */
++	if (!of_device_is_compatible(node, "qcom,pcie-apq8064"))
++		val &= ~PHY_REFCLK_USE_PAD;
+ 	val |= PHY_REFCLK_SSP_EN;
+ 	writel(val, pcie->parf + PCIE20_PARF_PHY_REFCLK);
+ 
+From 729e3a669d1b62e9876a671ac03ccba399a23b68 Mon Sep 17 00:00:00 2001
+From: Ard Biesheuvel <ardb@kernel.org>
+Date: Sat, 9 Jan 2021 10:53:53 +0100
+Subject: PCI: Decline to resize resources if boot config must be preserved
+
+From: Ard Biesheuvel <ardb@kernel.org>
+
+commit 729e3a669d1b62e9876a671ac03ccba399a23b68 upstream.
+
+The _DSM #5 method in the ACPI host bridge object tells us whether the OS
+must preserve the resource assignments done by firmware. If this is the
+case, we should not permit drivers to resize BARs on the fly. Make
+pci_resize_resource() take this into account.
+
+Link: https://lore.kernel.org/r/20210109095353.13417-1-ardb@kernel.org
+Signed-off-by: Ard Biesheuvel <ardb@kernel.org>
+Signed-off-by: Bjorn Helgaas <bhelgaas@google.com>
+Cc: stable@vger.kernel.org	# v5.4+
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/pci/setup-res.c |    6 ++++++
+ 1 file changed, 6 insertions(+)
+
+--- a/drivers/pci/setup-res.c
++++ b/drivers/pci/setup-res.c
+@@ -410,10 +410,16 @@ EXPORT_SYMBOL(pci_release_resource);
+ int pci_resize_resource(struct pci_dev *dev, int resno, int size)
+ {
+ 	struct resource *res = dev->resource + resno;
++	struct pci_host_bridge *host;
+ 	int old, ret;
+ 	u32 sizes;
+ 	u16 cmd;
+ 
++	/* Check if we must preserve the firmware's resource assignment */
++	host = pci_find_host_bridge(dev->bus);
++	if (host->preserve_config)
++		return -ENOTSUPP;
++
+ 	/* Make sure the resource isn't assigned before resizing it. */
+ 	if (!(res->flags & IORESOURCE_UNSET))
+ 		return -EBUSY;
+From c35901b39ddc20077f4ae7b9f7bf344487f62212 Mon Sep 17 00:00:00 2001
+From: Hans de Goede <hdegoede@redhat.com>
+Date: Thu, 21 Jan 2021 16:07:54 +0100
+Subject: virt: vbox: Do not use wait_event_interruptible when called from kernel context
+
+From: Hans de Goede <hdegoede@redhat.com>
+
+commit c35901b39ddc20077f4ae7b9f7bf344487f62212 upstream.
+
+Do not use wait_event_interruptible when vbg_hgcm_call() gets called from
+kernel-context, such as it being called by the vboxsf filesystem code.
+
+This fixes some filesystem related system calls on shared folders
+unexpectedly failing with -EINTR.
+
+Fixes: 0532a1b0d045 ("virt: vbox: Implement passing requestor info to the host for VirtualBox 6.0.x")
+Reported-by: Ludovic Pouzenc <bugreports@pouzenc.fr>
+Signed-off-by: Hans de Goede <hdegoede@redhat.com>
+Cc: stable <stable@vger.kernel.org>
+Link: https://lore.kernel.org/r/20210121150754.147598-1-hdegoede@redhat.com
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/virt/vboxguest/vboxguest_utils.c |   18 ++++++++++++------
+ 1 file changed, 12 insertions(+), 6 deletions(-)
+
+--- a/drivers/virt/vboxguest/vboxguest_utils.c
++++ b/drivers/virt/vboxguest/vboxguest_utils.c
+@@ -468,7 +468,7 @@ static int hgcm_cancel_call(struct vbg_d
+  *               Cancellation fun.
+  */
+ static int vbg_hgcm_do_call(struct vbg_dev *gdev, struct vmmdev_hgcm_call *call,
+-			    u32 timeout_ms, bool *leak_it)
++			    u32 timeout_ms, bool interruptible, bool *leak_it)
+ {
+ 	int rc, cancel_rc, ret;
+ 	long timeout;
+@@ -495,10 +495,15 @@ static int vbg_hgcm_do_call(struct vbg_d
+ 	else
+ 		timeout = msecs_to_jiffies(timeout_ms);
+ 
+-	timeout = wait_event_interruptible_timeout(
+-					gdev->hgcm_wq,
+-					hgcm_req_done(gdev, &call->header),
+-					timeout);
++	if (interruptible) {
++		timeout = wait_event_interruptible_timeout(gdev->hgcm_wq,
++							   hgcm_req_done(gdev, &call->header),
++							   timeout);
++	} else {
++		timeout = wait_event_timeout(gdev->hgcm_wq,
++					     hgcm_req_done(gdev, &call->header),
++					     timeout);
++	}
+ 
+ 	/* timeout > 0 means hgcm_req_done has returned true, so success */
+ 	if (timeout > 0)
+@@ -631,7 +636,8 @@ int vbg_hgcm_call(struct vbg_dev *gdev,
+ 	hgcm_call_init_call(call, client_id, function, parms, parm_count,
+ 			    bounce_bufs);
+ 
+-	ret = vbg_hgcm_do_call(gdev, call, timeout_ms, &leak_it);
++	ret = vbg_hgcm_do_call(gdev, call, timeout_ms,
++			       requestor & VMMDEV_REQUESTOR_USERMODE, &leak_it);
+ 	if (ret == 0) {
+ 		*vbox_status = call->header.result;
+ 		ret = hgcm_call_copy_back_result(call, parms, parm_count,
+From 41e76c85660c022c6bf5713bfb6c21e64a487cec Mon Sep 17 00:00:00 2001
+From: Jan Kara <jack@suse.cz>
+Date: Fri, 5 Jun 2020 16:16:16 +0200
+Subject: bfq: Avoid false bfq queue merging
+
+From: Jan Kara <jack@suse.cz>
+
+commit 41e76c85660c022c6bf5713bfb6c21e64a487cec upstream.
+
+bfq_setup_cooperator() uses bfqd->in_serv_last_pos so detect whether it
+makes sense to merge current bfq queue with the in-service queue.
+However if the in-service queue is freshly scheduled and didn't dispatch
+any requests yet, bfqd->in_serv_last_pos is stale and contains value
+from the previously scheduled bfq queue which can thus result in a bogus
+decision that the two queues should be merged. This bug can be observed
+for example with the following fio jobfile:
+
+[global]
+direct=0
+ioengine=sync
+invalidate=1
+size=1g
+rw=read
+
+[reader]
+numjobs=4
+directory=/mnt
+
+where the 4 processes will end up in the one shared bfq queue although
+they do IO to physically very distant files (for some reason I was able to
+observe this only with slice_idle=1ms setting).
+
+Fix the problem by invalidating bfqd->in_serv_last_pos when switching
+in-service queue.
+
+Fixes: 058fdecc6de7 ("block, bfq: fix in-service-queue check for queue merging")
+CC: stable@vger.kernel.org
+Signed-off-by: Jan Kara <jack@suse.cz>
+Acked-by: Paolo Valente <paolo.valente@linaro.org>
+Signed-off-by: Jens Axboe <axboe@kernel.dk>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ block/bfq-iosched.c |    1 +
+ 1 file changed, 1 insertion(+)
+
+--- a/block/bfq-iosched.c
++++ b/block/bfq-iosched.c
+@@ -2937,6 +2937,7 @@ static void __bfq_set_in_service_queue(s
+ 	}
+ 
+ 	bfqd->in_service_queue = bfqq;
++	bfqd->in_serv_last_pos = 0;
+ }
+ 
+ /*
+From fb3c293b82c31a9a68fbcf4e7a45fadd8a47ea2b Mon Sep 17 00:00:00 2001
+From: Takashi Iwai <tiwai@suse.de>
+Date: Fri, 5 Feb 2021 15:45:59 +0100
+Subject: ALSA: usb-audio: Fix PCM buffer allocation in non-vmalloc mode
+
+From: Takashi Iwai <tiwai@suse.de>
+
+commit fb3c293b82c31a9a68fbcf4e7a45fadd8a47ea2b upstream.
+
+The commit f274baa49be6 ("ALSA: usb-audio: Allow non-vmalloc buffer
+for PCM buffers") introduced the mode to allocate coherent pages for
+PCM buffers, and it used bus->controller device as its DMA device.
+It turned out, however, that bus->sysdev is a more appropriate device
+to be used for DMA mapping in HCD code.
+
+This patch corrects the device reference accordingly.
+
+Note that, on most platforms, both point to the very same device,
+hence this patch doesn't change anything practically.  But on
+platforms like xhcd-plat hcd, the change becomes effective.
+
+Fixes: f274baa49be6 ("ALSA: usb-audio: Allow non-vmalloc buffer for PCM buffers")
+Cc: <stable@vger.kernel.org>
+Link: https://lore.kernel.org/r/20210205144559.29555-1-tiwai@suse.de
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ sound/usb/pcm.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/sound/usb/pcm.c
++++ b/sound/usb/pcm.c
+@@ -1558,7 +1558,7 @@ void snd_usb_preallocate_buffer(struct s
+ {
+ 	struct snd_pcm *pcm = subs->stream->pcm;
+ 	struct snd_pcm_substream *s = pcm->streams[subs->direction].substream;
+-	struct device *dev = subs->dev->bus->controller;
++	struct device *dev = subs->dev->bus->sysdev;
+ 
+ 	if (snd_usb_use_vmalloc)
+ 		snd_pcm_set_managed_buffer(s, SNDRV_DMA_TYPE_VMALLOC,
+From 2395928158059b8f9858365fce7713ce7fef62e4 Mon Sep 17 00:00:00 2001
+From: Rokudo Yan <wu-yan@tcl.com>
+Date: Thu, 25 Feb 2021 17:18:31 -0800
+Subject: zsmalloc: account the number of compacted pages correctly
+
+From: Rokudo Yan <wu-yan@tcl.com>
+
+commit 2395928158059b8f9858365fce7713ce7fef62e4 upstream.
+
+There exists multiple path may do zram compaction concurrently.
+1. auto-compaction triggered during memory reclaim
+2. userspace utils write zram<id>/compaction node
+
+So, multiple threads may call zs_shrinker_scan/zs_compact concurrently.
+But pages_compacted is a per zsmalloc pool variable and modification
+of the variable is not serialized(through under class->lock).
+There are two issues here:
+1. the pages_compacted may not equal to total number of pages
+freed(due to concurrently add).
+2. zs_shrinker_scan may not return the correct number of pages
+freed(issued by current shrinker).
+
+The fix is simple:
+1. account the number of pages freed in zs_compact locally.
+2. use actomic variable pages_compacted to accumulate total number.
+
+Link: https://lkml.kernel.org/r/20210202122235.26885-1-wu-yan@tcl.com
+Fixes: 860c707dca155a56 ("zsmalloc: account the number of compacted pages")
+Signed-off-by: Rokudo Yan <wu-yan@tcl.com>
+Cc: Minchan Kim <minchan@kernel.org>
+Cc: Sergey Senozhatsky <sergey.senozhatsky@gmail.com>
+Cc: <stable@vger.kernel.org>
+Signed-off-by: Andrew Morton <akpm@linux-foundation.org>
+Signed-off-by: Linus Torvalds <torvalds@linux-foundation.org>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/block/zram/zram_drv.c |    2 +-
+ include/linux/zsmalloc.h      |    2 +-
+ mm/zsmalloc.c                 |   17 +++++++++++------
+ 3 files changed, 13 insertions(+), 8 deletions(-)
+
+--- a/drivers/block/zram/zram_drv.c
++++ b/drivers/block/zram/zram_drv.c
+@@ -1082,7 +1082,7 @@ static ssize_t mm_stat_show(struct devic
+ 			zram->limit_pages << PAGE_SHIFT,
+ 			max_used << PAGE_SHIFT,
+ 			(u64)atomic64_read(&zram->stats.same_pages),
+-			pool_stats.pages_compacted,
++			atomic_long_read(&pool_stats.pages_compacted),
+ 			(u64)atomic64_read(&zram->stats.huge_pages),
+ 			(u64)atomic64_read(&zram->stats.huge_pages_since));
+ 	up_read(&zram->init_lock);
+--- a/include/linux/zsmalloc.h
++++ b/include/linux/zsmalloc.h
+@@ -35,7 +35,7 @@ enum zs_mapmode {
+ 
+ struct zs_pool_stats {
+ 	/* How many pages were migrated (freed) */
+-	unsigned long pages_compacted;
++	atomic_long_t pages_compacted;
+ };
+ 
+ struct zs_pool;
+--- a/mm/zsmalloc.c
++++ b/mm/zsmalloc.c
+@@ -2213,11 +2213,13 @@ static unsigned long zs_can_compact(stru
+ 	return obj_wasted * class->pages_per_zspage;
+ }
+ 
+-static void __zs_compact(struct zs_pool *pool, struct size_class *class)
++static unsigned long __zs_compact(struct zs_pool *pool,
++				  struct size_class *class)
+ {
+ 	struct zs_compact_control cc;
+ 	struct zspage *src_zspage;
+ 	struct zspage *dst_zspage = NULL;
++	unsigned long pages_freed = 0;
+ 
+ 	spin_lock(&class->lock);
+ 	while ((src_zspage = isolate_zspage(class, true))) {
+@@ -2247,7 +2249,7 @@ static void __zs_compact(struct zs_pool
+ 		putback_zspage(class, dst_zspage);
+ 		if (putback_zspage(class, src_zspage) == ZS_EMPTY) {
+ 			free_zspage(pool, class, src_zspage);
+-			pool->stats.pages_compacted += class->pages_per_zspage;
++			pages_freed += class->pages_per_zspage;
+ 		}
+ 		spin_unlock(&class->lock);
+ 		cond_resched();
+@@ -2258,12 +2260,15 @@ static void __zs_compact(struct zs_pool
+ 		putback_zspage(class, src_zspage);
+ 
+ 	spin_unlock(&class->lock);
++
++	return pages_freed;
+ }
+ 
+ unsigned long zs_compact(struct zs_pool *pool)
+ {
+ 	int i;
+ 	struct size_class *class;
++	unsigned long pages_freed = 0;
+ 
+ 	for (i = ZS_SIZE_CLASSES - 1; i >= 0; i--) {
+ 		class = pool->size_class[i];
+@@ -2271,10 +2276,11 @@ unsigned long zs_compact(struct zs_pool
+ 			continue;
+ 		if (class->index != i)
+ 			continue;
+-		__zs_compact(pool, class);
++		pages_freed += __zs_compact(pool, class);
+ 	}
++	atomic_long_add(pages_freed, &pool->stats.pages_compacted);
+ 
+-	return pool->stats.pages_compacted;
++	return pages_freed;
+ }
+ EXPORT_SYMBOL_GPL(zs_compact);
+ 
+@@ -2291,13 +2297,12 @@ static unsigned long zs_shrinker_scan(st
+ 	struct zs_pool *pool = container_of(shrinker, struct zs_pool,
+ 			shrinker);
+ 
+-	pages_freed = pool->stats.pages_compacted;
+ 	/*
+ 	 * Compact classes and calculate compaction delta.
+ 	 * Can run concurrently with a manually triggered
+ 	 * (by user) compaction.
+ 	 */
+-	pages_freed = zs_compact(pool) - pages_freed;
++	pages_freed = zs_compact(pool);
+ 
+ 	return pages_freed ? pages_freed : SHRINK_STOP;
+ }
+From 8ac7c87acdcac156670f9920c8acbd84308ff4b1 Mon Sep 17 00:00:00 2001
+From: Alexander Lobakin <alobakin@pm.me>
+Date: Sun, 10 Jan 2021 11:56:08 +0000
+Subject: MIPS: vmlinux.lds.S: add missing PAGE_ALIGNED_DATA() section
+
+From: Alexander Lobakin <alobakin@pm.me>
+
+commit 8ac7c87acdcac156670f9920c8acbd84308ff4b1 upstream.
+
+MIPS uses its own declaration of rwdata, and thus it should be kept
+in sync with the asm-generic one. Currently PAGE_ALIGNED_DATA() is
+missing from the linker script, which emits the following ld
+warnings:
+
+mips-alpine-linux-musl-ld: warning: orphan section
+`.data..page_aligned' from `arch/mips/kernel/vdso.o' being placed
+in section `.data..page_aligned'
+mips-alpine-linux-musl-ld: warning: orphan section
+`.data..page_aligned' from `arch/mips/vdso/vdso-image.o' being placed
+in section `.data..page_aligned'
+
+Add the necessary declaration, so the mentioned structures will be
+placed in vmlinux as intended:
+
+ffffffff80630580 D __end_once
+ffffffff80630580 D __start___dyndbg
+ffffffff80630580 D __start_once
+ffffffff80630580 D __stop___dyndbg
+ffffffff80634000 d mips_vdso_data
+ffffffff80638000 d vdso_data
+ffffffff80638580 D _gp
+ffffffff8063c000 T __init_begin
+ffffffff8063c000 D _edata
+ffffffff8063c000 T _sinittext
+
+->
+
+ffffffff805a4000 D __end_init_task
+ffffffff805a4000 D __nosave_begin
+ffffffff805a4000 D __nosave_end
+ffffffff805a4000 d mips_vdso_data
+ffffffff805a8000 d vdso_data
+ffffffff805ac000 D mmlist_lock
+ffffffff805ac080 D tasklist_lock
+
+Fixes: ebb5e78cc634 ("MIPS: Initial implementation of a VDSO")
+Signed-off-by: Alexander Lobakin <alobakin@pm.me>
+Reviewed-by: Kees Cook <keescook@chromium.org>
+Reviewed-by: Nathan Chancellor <natechancellor@gmail.com>
+Cc: stable@vger.kernel.org # 4.4+
+Signed-off-by: Thomas Bogendoerfer <tsbogend@alpha.franken.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ arch/mips/kernel/vmlinux.lds.S |    1 +
+ 1 file changed, 1 insertion(+)
+
+--- a/arch/mips/kernel/vmlinux.lds.S
++++ b/arch/mips/kernel/vmlinux.lds.S
+@@ -90,6 +90,7 @@ SECTIONS
+ 
+ 		INIT_TASK_DATA(THREAD_SIZE)
+ 		NOSAVE_DATA
++		PAGE_ALIGNED_DATA(PAGE_SIZE)
+ 		CACHELINE_ALIGNED_DATA(1 << CONFIG_MIPS_L1_CACHE_SHIFT)
+ 		READ_MOSTLY_DATA(1 << CONFIG_MIPS_L1_CACHE_SHIFT)
+ 		DATA_DATA
+From f5b6a74d9c08b19740ca056876bf6584acdba582 Mon Sep 17 00:00:00 2001
+From: Nathan Chancellor <nathan@kernel.org>
+Date: Fri, 29 Jan 2021 17:46:51 -0700
+Subject: vmlinux.lds.h: Define SANTIZER_DISCARDS with CONFIG_GCOV_KERNEL=y
+
+From: Nathan Chancellor <nathan@kernel.org>
+
+commit f5b6a74d9c08b19740ca056876bf6584acdba582 upstream.
+
+clang produces .eh_frame sections when CONFIG_GCOV_KERNEL is enabled,
+even when -fno-asynchronous-unwind-tables is in KBUILD_CFLAGS:
+
+$ make CC=clang vmlinux
+...
+ld: warning: orphan section `.eh_frame' from `init/main.o' being placed in section `.eh_frame'
+ld: warning: orphan section `.eh_frame' from `init/version.o' being placed in section `.eh_frame'
+ld: warning: orphan section `.eh_frame' from `init/do_mounts.o' being placed in section `.eh_frame'
+ld: warning: orphan section `.eh_frame' from `init/do_mounts_initrd.o' being placed in section `.eh_frame'
+ld: warning: orphan section `.eh_frame' from `init/initramfs.o' being placed in section `.eh_frame'
+ld: warning: orphan section `.eh_frame' from `init/calibrate.o' being placed in section `.eh_frame'
+ld: warning: orphan section `.eh_frame' from `init/init_task.o' being placed in section `.eh_frame'
+...
+
+$ rg "GCOV_KERNEL|GCOV_PROFILE_ALL" .config
+CONFIG_GCOV_KERNEL=y
+CONFIG_ARCH_HAS_GCOV_PROFILE_ALL=y
+CONFIG_GCOV_PROFILE_ALL=y
+
+This was already handled for a couple of other options in
+commit d812db78288d ("vmlinux.lds.h: Avoid KASAN and KCSAN's unwanted
+sections") and there is an open LLVM bug for this issue. Take advantage
+of that section for this config as well so that there are no more orphan
+warnings.
+
+Link: https://bugs.llvm.org/show_bug.cgi?id=46478
+Link: https://github.com/ClangBuiltLinux/linux/issues/1069
+Reported-by: kernel test robot <lkp@intel.com>
+Reviewed-by: Fangrui Song <maskray@google.com>
+Reviewed-by: Nick Desaulniers <ndesaulniers@google.com>
+Signed-off-by: Nathan Chancellor <nathan@kernel.org>
+Fixes: d812db78288d ("vmlinux.lds.h: Avoid KASAN and KCSAN's unwanted sections")
+Cc: stable@vger.kernel.org
+Signed-off-by: Kees Cook <keescook@chromium.org>
+Link: https://lore.kernel.org/r/20210130004650.2682422-1-nathan@kernel.org
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ include/asm-generic/vmlinux.lds.h |    9 +++++----
+ 1 file changed, 5 insertions(+), 4 deletions(-)
+
+--- a/include/asm-generic/vmlinux.lds.h
++++ b/include/asm-generic/vmlinux.lds.h
+@@ -993,12 +993,13 @@
+ #endif
+ 
+ /*
+- * Clang's -fsanitize=kernel-address and -fsanitize=thread produce
+- * unwanted sections (.eh_frame and .init_array.*), but
+- * CONFIG_CONSTRUCTORS wants to keep any .init_array.* sections.
++ * Clang's -fprofile-arcs, -fsanitize=kernel-address, and
++ * -fsanitize=thread produce unwanted sections (.eh_frame
++ * and .init_array.*), but CONFIG_CONSTRUCTORS wants to
++ * keep any .init_array.* sections.
+  * https://bugs.llvm.org/show_bug.cgi?id=46478
+  */
+-#if defined(CONFIG_KASAN_GENERIC) || defined(CONFIG_KCSAN)
++#if defined(CONFIG_GCOV_KERNEL) || defined(CONFIG_KASAN_GENERIC) || defined(CONFIG_KCSAN)
+ # ifdef CONFIG_CONSTRUCTORS
+ #  define SANITIZER_DISCARDS						\
+ 	*(.eh_frame)
+From 11a0b5e0ec8c13bef06f7414f9e914506140d5cb Mon Sep 17 00:00:00 2001
+From: Eric Biggers <ebiggers@google.com>
+Date: Tue, 12 Jan 2021 11:28:18 -0800
+Subject: random: fix the RNDRESEEDCRNG ioctl
+
+From: Eric Biggers <ebiggers@google.com>
+
+commit 11a0b5e0ec8c13bef06f7414f9e914506140d5cb upstream.
+
+The RNDRESEEDCRNG ioctl reseeds the primary_crng from itself, which
+doesn't make sense.  Reseed it from the input_pool instead.
+
+Fixes: d848e5f8e1eb ("random: add new ioctl RNDRESEEDCRNG")
+Cc: stable@vger.kernel.org
+Cc: linux-crypto@vger.kernel.org
+Cc: Andy Lutomirski <luto@kernel.org>
+Cc: Jann Horn <jannh@google.com>
+Cc: Theodore Ts'o <tytso@mit.edu>
+Reviewed-by: Jann Horn <jannh@google.com>
+Acked-by: Ard Biesheuvel <ardb@kernel.org>
+Signed-off-by: Eric Biggers <ebiggers@google.com>
+Link: https://lore.kernel.org/r/20210112192818.69921-1-ebiggers@kernel.org
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/char/random.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/drivers/char/random.c
++++ b/drivers/char/random.c
+@@ -1972,7 +1972,7 @@ static long random_ioctl(struct file *f,
+ 			return -EPERM;
+ 		if (crng_init < 2)
+ 			return -ENODATA;
+-		crng_reseed(&primary_crng, NULL);
++		crng_reseed(&primary_crng, &input_pool);
+ 		crng_global_init_time = jiffies - 1;
+ 		return 0;
+ 	default:
+From 29bb274e94974669acb5186a75538f20df1508b6 Mon Sep 17 00:00:00 2001
+From: Takashi Iwai <tiwai@suse.de>
+Date: Sat, 6 Feb 2021 21:36:53 +0100
+Subject: ALSA: pcm: Call sync_stop at disconnection
+
+From: Takashi Iwai <tiwai@suse.de>
+
+commit 29bb274e94974669acb5186a75538f20df1508b6 upstream.
+
+The PCM core should perform the sync for the pending stop operations
+at disconnection.  Otherwise it may lead to unexpected access.
+
+Currently the old user of sync_stop, USB-audio driver, has its own
+sync, so this isn't needed, but it's better to guarantee the sync in
+the PCM core level.
+
+This patch adds the missing sync_stop call at PCM disconnection
+callback.  It also assures the IRQ sync if it's specified in the
+card.  snd_pcm_sync_stop() is slightly modified to be called also for
+any PCM substream object now.
+
+Fixes: 1e850beea278 ("ALSA: pcm: Add the support for sync-stop operation")
+Cc: <stable@vger.kernel.org>
+Link: https://lore.kernel.org/r/20210206203656.15959-2-tiwai@suse.de
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ sound/core/init.c       |    4 ++++
+ sound/core/pcm.c        |    4 ++++
+ sound/core/pcm_local.h  |    1 +
+ sound/core/pcm_native.c |   16 ++++++++--------
+ 4 files changed, 17 insertions(+), 8 deletions(-)
+
+--- a/sound/core/init.c
++++ b/sound/core/init.c
+@@ -14,6 +14,7 @@
+ #include <linux/ctype.h>
+ #include <linux/pm.h>
+ #include <linux/completion.h>
++#include <linux/interrupt.h>
+ 
+ #include <sound/core.h>
+ #include <sound/control.h>
+@@ -416,6 +417,9 @@ int snd_card_disconnect(struct snd_card
+ 	/* notify all devices that we are disconnected */
+ 	snd_device_disconnect_all(card);
+ 
++	if (card->sync_irq > 0)
++		synchronize_irq(card->sync_irq);
++
+ 	snd_info_card_disconnect(card);
+ 	if (card->registered) {
+ 		device_del(&card->card_dev);
+--- a/sound/core/pcm.c
++++ b/sound/core/pcm.c
+@@ -1111,6 +1111,10 @@ static int snd_pcm_dev_disconnect(struct
+ 		}
+ 	}
+ 
++	for (cidx = 0; cidx < 2; cidx++)
++		for (substream = pcm->streams[cidx].substream; substream; substream = substream->next)
++			snd_pcm_sync_stop(substream, false);
++
+ 	pcm_call_notify(pcm, n_disconnect);
+ 	for (cidx = 0; cidx < 2; cidx++) {
+ 		snd_unregister_device(&pcm->streams[cidx].dev);
+--- a/sound/core/pcm_local.h
++++ b/sound/core/pcm_local.h
+@@ -63,6 +63,7 @@ static inline void snd_pcm_timer_done(st
+ 
+ void __snd_pcm_xrun(struct snd_pcm_substream *substream);
+ void snd_pcm_group_init(struct snd_pcm_group *group);
++void snd_pcm_sync_stop(struct snd_pcm_substream *substream, bool sync_irq);
+ 
+ #ifdef CONFIG_SND_DMA_SGBUF
+ struct page *snd_pcm_sgbuf_ops_page(struct snd_pcm_substream *substream,
+--- a/sound/core/pcm_native.c
++++ b/sound/core/pcm_native.c
+@@ -583,13 +583,13 @@ static inline void snd_pcm_timer_notify(
+ #endif
+ }
+ 
+-static void snd_pcm_sync_stop(struct snd_pcm_substream *substream)
++void snd_pcm_sync_stop(struct snd_pcm_substream *substream, bool sync_irq)
+ {
+-	if (substream->runtime->stop_operating) {
++	if (substream->runtime && substream->runtime->stop_operating) {
+ 		substream->runtime->stop_operating = false;
+-		if (substream->ops->sync_stop)
++		if (substream->ops && substream->ops->sync_stop)
+ 			substream->ops->sync_stop(substream);
+-		else if (substream->pcm->card->sync_irq > 0)
++		else if (sync_irq && substream->pcm->card->sync_irq > 0)
+ 			synchronize_irq(substream->pcm->card->sync_irq);
+ 	}
+ }
+@@ -686,7 +686,7 @@ static int snd_pcm_hw_params(struct snd_
+ 		if (atomic_read(&substream->mmap_count))
+ 			return -EBADFD;
+ 
+-	snd_pcm_sync_stop(substream);
++	snd_pcm_sync_stop(substream, true);
+ 
+ 	params->rmask = ~0U;
+ 	err = snd_pcm_hw_refine(substream, params);
+@@ -809,7 +809,7 @@ static int do_hw_free(struct snd_pcm_sub
+ {
+ 	int result = 0;
+ 
+-	snd_pcm_sync_stop(substream);
++	snd_pcm_sync_stop(substream, true);
+ 	if (substream->ops->hw_free)
+ 		result = substream->ops->hw_free(substream);
+ 	if (substream->managed_buffer_alloc)
+@@ -1736,7 +1736,7 @@ static void snd_pcm_post_resume(struct s
+ 	snd_pcm_trigger_tstamp(substream);
+ 	runtime->status->state = runtime->status->suspended_state;
+ 	snd_pcm_timer_notify(substream, SNDRV_TIMER_EVENT_MRESUME);
+-	snd_pcm_sync_stop(substream);
++	snd_pcm_sync_stop(substream, true);
+ }
+ 
+ static const struct action_ops snd_pcm_action_resume = {
+@@ -1866,7 +1866,7 @@ static int snd_pcm_do_prepare(struct snd
+ 			      snd_pcm_state_t state)
+ {
+ 	int err;
+-	snd_pcm_sync_stop(substream);
++	snd_pcm_sync_stop(substream, true);
+ 	err = substream->ops->prepare(substream);
+ 	if (err < 0)
+ 		return err;
+From 2c87c1a49c9d113a9f3e8e951d7d64be5ff50ac1 Mon Sep 17 00:00:00 2001
+From: Takashi Iwai <tiwai@suse.de>
+Date: Sat, 6 Feb 2021 21:36:54 +0100
+Subject: ALSA: pcm: Assure sync with the pending stop operation at suspend
+
+From: Takashi Iwai <tiwai@suse.de>
+
+commit 2c87c1a49c9d113a9f3e8e951d7d64be5ff50ac1 upstream.
+
+The current PCM code calls the sync_stop at the resume action due to
+the analogy to the PCM prepare call pattern.  But, it makes little
+sense, as the sync should have been done rather at the suspend time,
+not at the resume time.
+
+This patch corrects the sync_stop call at suspend/resume to assure the
+sync before finishing the suspend.
+
+Fixes: 1e850beea278 ("ALSA: pcm: Add the support for sync-stop operation")
+Cc: <stable@vger.kernel.org>
+Link: https://lore.kernel.org/r/20210206203656.15959-3-tiwai@suse.de
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ sound/core/pcm_native.c |    8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+--- a/sound/core/pcm_native.c
++++ b/sound/core/pcm_native.c
+@@ -1615,6 +1615,7 @@ static int snd_pcm_do_suspend(struct snd
+ 	if (! snd_pcm_running(substream))
+ 		return 0;
+ 	substream->ops->trigger(substream, SNDRV_PCM_TRIGGER_SUSPEND);
++	runtime->stop_operating = true;
+ 	return 0; /* suspend unconditionally */
+ }
+ 
+@@ -1691,6 +1692,12 @@ int snd_pcm_suspend_all(struct snd_pcm *
+ 				return err;
+ 		}
+ 	}
++
++	for (stream = 0; stream < 2; stream++)
++		for (substream = pcm->streams[stream].substream;
++		     substream; substream = substream->next)
++			snd_pcm_sync_stop(substream, false);
++
+ 	return 0;
+ }
+ EXPORT_SYMBOL(snd_pcm_suspend_all);
+@@ -1736,7 +1743,6 @@ static void snd_pcm_post_resume(struct s
+ 	snd_pcm_trigger_tstamp(substream);
+ 	runtime->status->state = runtime->status->suspended_state;
+ 	snd_pcm_timer_notify(substream, SNDRV_TIMER_EVENT_MRESUME);
+-	snd_pcm_sync_stop(substream, true);
+ }
+ 
+ static const struct action_ops snd_pcm_action_resume = {
+From 700cb70730777c159a988e01daa93f20a1ae9b58 Mon Sep 17 00:00:00 2001
+From: Takashi Iwai <tiwai@suse.de>
+Date: Sat, 6 Feb 2021 21:36:55 +0100
+Subject: ALSA: pcm: Don't call sync_stop if it hasn't been stopped
+
+From: Takashi Iwai <tiwai@suse.de>
+
+commit 700cb70730777c159a988e01daa93f20a1ae9b58 upstream.
+
+The PCM stop operation sets the stop_operating flag for indicating the
+sync_stop post-process.  This flag is, however, set unconditionally
+even if the PCM trigger weren't issued.  This may lead to
+inconsistency in the driver side.
+
+Correct the code to set stop_operating flag only after the trigger
+STOP is actually called.
+
+Fixes: 1e850beea278 ("ALSA: pcm: Add the support for sync-stop operation")
+Cc: <stable@vger.kernel.org>
+Link: https://lore.kernel.org/r/20210206203656.15959-4-tiwai@suse.de
+Signed-off-by: Takashi Iwai <tiwai@suse.de>
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ sound/core/pcm_native.c |    5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+--- a/sound/core/pcm_native.c
++++ b/sound/core/pcm_native.c
+@@ -1421,8 +1421,10 @@ static int snd_pcm_do_stop(struct snd_pc
+ 			   snd_pcm_state_t state)
+ {
+ 	if (substream->runtime->trigger_master == substream &&
+-	    snd_pcm_running(substream))
++	    snd_pcm_running(substream)) {
+ 		substream->ops->trigger(substream, SNDRV_PCM_TRIGGER_STOP);
++		substream->runtime->stop_operating = true;
++	}
+ 	return 0; /* unconditonally stop all substreams */
+ }
+ 
+@@ -1435,7 +1437,6 @@ static void snd_pcm_post_stop(struct snd
+ 		runtime->status->state = state;
+ 		snd_pcm_timer_notify(substream, SNDRV_TIMER_EVENT_MSTOP);
+ 	}
+-	runtime->stop_operating = true;
+ 	wake_up(&runtime->sleep);
+ 	wake_up(&runtime->tsleep);
+ }
+From e627d5923cae93fa4188f4c4afba6486169a1337 Mon Sep 17 00:00:00 2001
+From: Chris Wilson <chris@chris-wilson.co.uk>
+Date: Tue, 19 Jan 2021 11:07:57 +0000
+Subject: drm/i915/gt: One more flush for Baytrail clear residuals
+
+From: Chris Wilson <chris@chris-wilson.co.uk>
+
+commit e627d5923cae93fa4188f4c4afba6486169a1337 upstream.
+
+CI reports that Baytail requires one more invalidate after CACHE_MODE
+for it to be happy.
+
+Fixes: ace44e13e577 ("drm/i915/gt: Clear CACHE_MODE prior to clearing residuals")
+Signed-off-by: Chris Wilson <chris@chris-wilson.co.uk>
+Cc: Mika Kuoppala <mika.kuoppala@linux.intel.com>
+Cc: Akeem G Abodunrin <akeem.g.abodunrin@intel.com>
+Reviewed-by: Mika Kuoppala <mika.kuoppala@linux.intel.com>
+Reviewed-by: Akeem G Abodunrin <akeem.g.abodunrin@intel.com>
+Cc: Hans de Goede <hdegoede@redhat.com>
+Cc: Diego Calleja <diegocg@gmail.com>
+Link: https://patchwork.freedesktop.org/patch/msgid/20210119110802.22228-1-chris@chris-wilson.co.uk
+Signed-off-by: Greg Kroah-Hartman <gregkh@linuxfoundation.org>
+---
+ drivers/gpu/drm/i915/gt/gen7_renderclear.c |    9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+--- a/drivers/gpu/drm/i915/gt/gen7_renderclear.c
++++ b/drivers/gpu/drm/i915/gt/gen7_renderclear.c
+@@ -353,19 +353,21 @@ static void gen7_emit_pipeline_flush(str
+ 
+ static void gen7_emit_pipeline_invalidate(struct batch_chunk *batch)
+ {
+-	u32 *cs = batch_alloc_items(batch, 0, 8);
++	u32 *cs = batch_alloc_items(batch, 0, 10);
+ 
+ 	/* ivb: Stall before STATE_CACHE_INVALIDATE */
+-	*cs++ = GFX_OP_PIPE_CONTROL(4);
++	*cs++ = GFX_OP_PIPE_CONTROL(5);
+ 	*cs++ = PIPE_CONTROL_STALL_AT_SCOREBOARD |
+ 		PIPE_CONTROL_CS_STALL;
+ 	*cs++ = 0;
+ 	*cs++ = 0;
++	*cs++ = 0;
+ 
+-	*cs++ = GFX_OP_PIPE_CONTROL(4);
++	*cs++ = GFX_OP_PIPE_CONTROL(5);
+ 	*cs++ = PIPE_CONTROL_STATE_CACHE_INVALIDATE;
+ 	*cs++ = 0;
+ 	*cs++ = 0;
++	*cs++ = 0;
+ 
+ 	batch_advance(batch, cs);
+ }
+@@ -397,6 +399,7 @@ static void emit_batch(struct i915_vma *
+ 	batch_add(&cmds, 0xffff0000);
+ 	batch_add(&cmds, i915_mmio_reg_offset(CACHE_MODE_1));
+ 	batch_add(&cmds, 0xffff0000 | PIXEL_SUBSPAN_COLLECT_OPT_DISABLE);
++	gen7_emit_pipeline_invalidate(&cmds);
+ 	gen7_emit_pipeline_flush(&cmds);
+ 
+ 	/* Switch to the media pipeline and our base address */

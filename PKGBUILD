@@ -13,7 +13,7 @@ _sub=2
 pkgver=${_basekernel}.${_sub}
 pkgrel=3
 _archpatch=20210301
-_prjc="r0"
+_prjc="r1"
 _stablequeue=79368accd6
 arch=('x86_64')
 url="http://www.kernel.org/"
@@ -90,7 +90,7 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver}.tar.{xz,sig
     2007-ntfs-rw-gpl-driver-implementation-by-paragon-v21.patch
     #
     # Project C (BMQ+PDS)
-    # 3001-projectc511-${_prjc}-orig.patch::https://gitlab.com/alfredchen/linux-prjc/uploads/12a5a2a5f6be6a62a2e069e9b4a3b99d/prjc_v5.11-r0.patch
+    # 3001-projectc511-${_prjc}-orig.patch::https://gitlab.com/alfredchen/linux-prjc/uploads/604a80e2e5ac99c431f0944e4e986aa6/prjc_v5.11-r1.patch
     # 3001-projectc511-${_prjc}-vd.patch # for use with tip
     # CacULE
     #

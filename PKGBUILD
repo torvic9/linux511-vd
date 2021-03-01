@@ -14,7 +14,7 @@ pkgver=${_basekernel}.${_sub}
 pkgrel=2
 _archpatch=20210225
 _prjc="r0"
-_stablequeue=143abe5692
+_stablequeue=324382109d
 arch=('x86_64')
 url="http://www.kernel.org/"
 license=('GPL2')
@@ -48,8 +48,8 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver}.tar.{xz,sig
     # bfq fixes
     0012-block-bfq-fixes-and-improvements.patch
     # tip:sched/core
-    0013-tip-sched-core-20210205.patch
-    # 0013-tip-sched-core-no-dyn-preempt-20210205.patch # for use with ProjectC
+    0013-tip-sched-core-20210301.patch
+    # 0013-tip-sched-core-no-dyn-preempt-20210301.patch # for use with ProjectC
     # sched balance tweaks
     0014-sched-fair-misfit-task-load-balance-tweaks-v2.patch
     # rcu fixes
@@ -119,7 +119,7 @@ sha256sums=('904a5b3cbaf5264ef8da6c7a5445fa7ea19168ad77fb83a7cc1b8ba95d52d0a0'
             '6f4d0e174b1036a2aca5a828c50461aaffa8d7c602985dab1ac7b510a359bddb'
             'ab010dc5ef6ce85d352956e5996d242246ecd0912b30f0b72025c38eadff8cd5'
             '8f357fab1c5b3e81240b543a6643fdbca1d8591f5dd18bc18e38ae992d78944c'
-            '4dffeafd4d2ce1a908245059170c50ba1861bbe4482f902e33c42e2e53e40d69'
+            '52a45ce7546204de35518b6eb6a6a1cc4d9f13bd73137a0920f79367a5b49ba8'
             '24e3f40bdc141f0ba2cca7c0c98cdcda13270be50757f7aef13f4035c5d5f396'
             '9b0c200b0dadfcfb1b3c42acd0c007e1d582a86abc6b04f3096e0535c8784ab6'
             '3d38fc4052b999b67aaed9fe9a4ba6ffd778ffbf7e94a66d5577391dbd08d12a'
@@ -132,7 +132,7 @@ sha256sums=('904a5b3cbaf5264ef8da6c7a5445fa7ea19168ad77fb83a7cc1b8ba95d52d0a0'
             '18a84957915dd924cbdddfb031954f97e951bd96f5593fb1eb8c73bc4a61bd3f'
             '623a3b02b980fcd52bc7d230be1661ada7b557e3cd83c0560666e1f010bd3509'
             '9e86bfb28c4c9a30a116f57c24d57cf7488df2755198425522564b4e8f8015e7'
-            'db3b8d090f2b9c537f467eb0b5433127c9272824a7c97ebf3c7b8521ceafb0a9'
+            'bb69675d0b1922dca355a9783c4a77f16ba4c451e0921869e3550748ae8de61a'
             '4214820327a243167570b54611830d7a227f79c398c256ba40924fab077e99f6'
             'a652bf7985cd0633ee12e61efb9dd898f28468e93caa852e210923fed92724fb'
             '49b29307ee96f85db5949866fd2f5a76502dd5be7564771febfe57c807b4f740'
@@ -153,8 +153,8 @@ sha256sums=('904a5b3cbaf5264ef8da6c7a5445fa7ea19168ad77fb83a7cc1b8ba95d52d0a0'
             '33752d734f2276e5f396da3512a7a7f47b8bb6037b70d17120fd5c30f807a8cd'
             '24a024268e8ac2548078ad7ea3445a2331d21df6eb01f5caf9b1b42caf4241bb'
             'cd96250876c30af9a1b5a7f8191ab8390842c993bd92f6987fb661e3edf1941e'
-            'a9ec2ef0a19f61ef5ecb7ab09fbc6174c784d59ec01e16d8297ff2bf1c29eefa'
-            '2a55be336d1b8df8dda423efd7793c96cc144002e3e9f8c7b972ea28d435175c'
+            '4b6698dab016c6b76eae4c4fa107a6c13806bc0dbfd143a06cebd07561a4080f'
+            'defe5d56d9d93aa785c4ba4fe5f2682c00a9a3fdb19fedeeeb95aae8261d8c0e'
             '3b59a65e179e79b7372c451bdaf8f41ccc336615e492340f7d65b00e12c49b3d')
 
 export KBUILD_BUILD_USER=$pkgbase

@@ -11,10 +11,10 @@ _kernelname=-vd
 _sub=2
 #_rc=rc7
 pkgver=${_basekernel}.${_sub}
-pkgrel=2
-_archpatch=20210225
+pkgrel=21
+_archpatch=20210301
 _prjc="r0"
-_stablequeue=324382109d
+_stablequeue=79368accd6
 arch=('x86_64')
 url="http://www.kernel.org/"
 license=('GPL2')
@@ -29,7 +29,8 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver}.tar.{xz,sig
     "prepatch-${_basekernel/./}-g${_stablequeue}.patch"
     #
     # Arch patches
-    0001-arch-patches511-${_archpatch}.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11/arch-patches-v5/0001-arch-patches.patch
+    # 0001-arch-patches511-${_archpatch}.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11/arch-patches-v5/0001-arch-patches.patch
+    0001-arch-patches511-${_archpatch}.patch
     # CPU patches
     0002-graysky-cpu-optimizations.patch
     0003-enable-O3-for-all-archs-and-add-option-for-O1.patch
@@ -61,17 +62,16 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver}.tar.{xz,sig
     # fs buffer fix
     0018-fs-buffer-revoke-lru-when-trying-to-drop-buffers-v4.patch
     # btrfs patches
-    0019-btrfs-patches-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11/btrfs-patches-v3/0001-btrfs-patches.patch
+    # 0019-btrfs-patches-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11/btrfs-patches-v3/0001-btrfs-patches.patch
+    0019-btrfs-patches-sirlucjan.patch
     # multigenerational lru by google
     0020-multigenerational-lru-v1.patch
     # Nuvoton nc677x driver
     0021-i2c-nuvoton-nc677x-hwmon-driver-git.patch::https://gitlab.com/CalcProgrammer1/OpenRGB/-/raw/master/OpenRGB.patch
-    # cpufreq/acpi fix for Zen
-    0022-cpufreq-acpi-set-cpuinfo.max_freq-directly-if-max-boost-is-known.patch
+    # async initramfs unpacking
+    0022-init-initramfs.c-allow-asynchronous-unpacking.patch
     # sched/fair fixes - disable when using ProjectC
     0023-move-update-blocked-load-outside-newidle_balance.patch
-    # async initramfs unpacking
-    0024-init-initramfs.c-allow-asynchronous-unpacking.patch
     #
     # futex_wait_multiple
     1001-futex-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11/futex-trunk-patches/0001-futex-resync-from-gitlab.collabora.com.patch
@@ -119,8 +119,8 @@ sha256sums=('904a5b3cbaf5264ef8da6c7a5445fa7ea19168ad77fb83a7cc1b8ba95d52d0a0'
             '6f4d0e174b1036a2aca5a828c50461aaffa8d7c602985dab1ac7b510a359bddb'
             'ab010dc5ef6ce85d352956e5996d242246ecd0912b30f0b72025c38eadff8cd5'
             '8f357fab1c5b3e81240b543a6643fdbca1d8591f5dd18bc18e38ae992d78944c'
-            '52a45ce7546204de35518b6eb6a6a1cc4d9f13bd73137a0920f79367a5b49ba8'
-            '24e3f40bdc141f0ba2cca7c0c98cdcda13270be50757f7aef13f4035c5d5f396'
+            'a4d7dcdba4182cc30c570770d129de4431396394205852915d8f7c56ce75b138'
+            '8c8f0080e5ecbb3b4982e288d3393dedfc7001227753983e128318b23ca117fa'
             '9b0c200b0dadfcfb1b3c42acd0c007e1d582a86abc6b04f3096e0535c8784ab6'
             '3d38fc4052b999b67aaed9fe9a4ba6ffd778ffbf7e94a66d5577391dbd08d12a'
             '0a05bbb282502db210f8ab843a5c3f39b847af5303fb7bd5a8655686cf76c1b7'
@@ -132,18 +132,17 @@ sha256sums=('904a5b3cbaf5264ef8da6c7a5445fa7ea19168ad77fb83a7cc1b8ba95d52d0a0'
             '18a84957915dd924cbdddfb031954f97e951bd96f5593fb1eb8c73bc4a61bd3f'
             '623a3b02b980fcd52bc7d230be1661ada7b557e3cd83c0560666e1f010bd3509'
             '9e86bfb28c4c9a30a116f57c24d57cf7488df2755198425522564b4e8f8015e7'
-            'bb69675d0b1922dca355a9783c4a77f16ba4c451e0921869e3550748ae8de61a'
+            '44e051227927c78ffd8e85566495bbc661df427bc1c9e98518071ec195b69956'
             '4214820327a243167570b54611830d7a227f79c398c256ba40924fab077e99f6'
             'a652bf7985cd0633ee12e61efb9dd898f28468e93caa852e210923fed92724fb'
             '49b29307ee96f85db5949866fd2f5a76502dd5be7564771febfe57c807b4f740'
             '1922dca263ce9f9790fd37e8ead35e32eea0df0391b1d83c6dcef911411d807a'
             '1523298b9c29fa80ecc945982b7e450b5a9128054f91bce0fc596141ed3d1df2'
-            '64cf033faaf056142224baaa92ee6e29d26f8312e22bd0e2b0f16d38454e3e2b'
+            '76929af12dea82c734506e06cd556173d9888f47fb4c6a7abb53a873abd7c7e5'
             'ca2cd10fc86d3347d98da60e11b8ca02544d62d4da6179b9555fc92cacfb6838'
             'e7d724ac15daf428aa1e6a03737e5c1d040892d55fda8a66897fcac9323f285c'
-            '7c4ca00789ac3ebca1f94e81319027c39a229d2b4c07874f337e4fb94c9c737c'
-            '36335d6fa322427d4771804f4ef39417feda966a10da275ef0311e61f1193b1c'
             'ebb1cc8dd0bdcde7246aacee531d06a5b035ccd481f4c306f2316010a7be2282'
+            '36335d6fa322427d4771804f4ef39417feda966a10da275ef0311e61f1193b1c'
             '239307e0018ab2405b9afaa7d315ee3352b83819a3c75b65951749b52a3247d2'
             '7fd689f4ec88364d1ac00007e6f1e273ee9b53cae187e0f70e7f810303dc9303'
             'f7a36231b794022d49e53f464d25e48f2eebf6266c2cbe5756c63aa3bf03bae7'

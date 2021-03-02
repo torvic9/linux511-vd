@@ -3696,1586 +3696,6 @@ index 625ec1e12..be3a956c2 100644
 -- 
 2.30.0
 
-From 407bc881b21d9b6cd14dd9b09adffc2d8e45fbe9 Mon Sep 17 00:00:00 2001
-From: Peter Zijlstra <peterz@infradead.org>
-Date: Mon, 18 Jan 2021 15:12:18 +0100
-Subject: [PATCH] static_call: Pull some static_call declarations to the type
- headers
-
-Some static call declarations are going to be needed on low level header
-files. Move the necessary material to the dedicated static call types
-header to avoid inclusion dependency hell.
-
-Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
-Signed-off-by: Frederic Weisbecker <frederic@kernel.org>
-Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
-Link: https://lkml.kernel.org/r/20210118141223.123667-4-frederic@kernel.org
-Signed-off-by: torvic9 <torvic9@mailbox.org>
----
- include/linux/static_call.h             | 21 -------------------
- include/linux/static_call_types.h       | 27 +++++++++++++++++++++++++
- tools/include/linux/static_call_types.h | 27 +++++++++++++++++++++++++
- 3 files changed, 54 insertions(+), 21 deletions(-)
-
-diff --git a/include/linux/static_call.h b/include/linux/static_call.h
-index 695da4c9b..a2c064585 100644
---- a/include/linux/static_call.h
-+++ b/include/linux/static_call.h
-@@ -107,26 +107,10 @@ extern void arch_static_call_transform(void *site, void *tramp, void *func, bool
- 
- #define STATIC_CALL_TRAMP_ADDR(name) &STATIC_CALL_TRAMP(name)
- 
--/*
-- * __ADDRESSABLE() is used to ensure the key symbol doesn't get stripped from
-- * the symbol table so that objtool can reference it when it generates the
-- * .static_call_sites section.
-- */
--#define __static_call(name)						\
--({									\
--	__ADDRESSABLE(STATIC_CALL_KEY(name));				\
--	&STATIC_CALL_TRAMP(name);					\
--})
--
- #else
- #define STATIC_CALL_TRAMP_ADDR(name) NULL
- #endif
- 
--
--#define DECLARE_STATIC_CALL(name, func)					\
--	extern struct static_call_key STATIC_CALL_KEY(name);		\
--	extern typeof(func) STATIC_CALL_TRAMP(name);
--
- #define static_call_update(name, func)					\
- ({									\
- 	BUILD_BUG_ON(!__same_type(*(func), STATIC_CALL_TRAMP(name)));	\
-@@ -174,7 +158,6 @@ extern int static_call_text_reserved(void *start, void *end);
- 	};								\
- 	ARCH_DEFINE_STATIC_CALL_NULL_TRAMP(name)
- 
--#define static_call(name)	__static_call(name)
- #define static_call_cond(name)	(void)__static_call(name)
- 
- #define EXPORT_STATIC_CALL(name)					\
-@@ -207,7 +190,6 @@ struct static_call_key {
- 	};								\
- 	ARCH_DEFINE_STATIC_CALL_NULL_TRAMP(name)
- 
--#define static_call(name)	__static_call(name)
- #define static_call_cond(name)	(void)__static_call(name)
- 
- static inline
-@@ -252,9 +234,6 @@ struct static_call_key {
- 		.func = NULL,						\
- 	}
- 
--#define static_call(name)						\
--	((typeof(STATIC_CALL_TRAMP(name))*)(STATIC_CALL_KEY(name).func))
--
- static inline void __static_call_nop(void) { }
- 
- /*
-diff --git a/include/linux/static_call_types.h b/include/linux/static_call_types.h
-index 89135bb35..08f78b1b8 100644
---- a/include/linux/static_call_types.h
-+++ b/include/linux/static_call_types.h
-@@ -4,6 +4,7 @@
- 
- #include <linux/types.h>
- #include <linux/stringify.h>
-+#include <linux/compiler.h>
- 
- #define STATIC_CALL_KEY_PREFIX		__SCK__
- #define STATIC_CALL_KEY_PREFIX_STR	__stringify(STATIC_CALL_KEY_PREFIX)
-@@ -32,4 +33,30 @@ struct static_call_site {
- 	s32 key;
- };
- 
-+#define DECLARE_STATIC_CALL(name, func)					\
-+	extern struct static_call_key STATIC_CALL_KEY(name);		\
-+	extern typeof(func) STATIC_CALL_TRAMP(name);
-+
-+#ifdef CONFIG_HAVE_STATIC_CALL
-+
-+/*
-+ * __ADDRESSABLE() is used to ensure the key symbol doesn't get stripped from
-+ * the symbol table so that objtool can reference it when it generates the
-+ * .static_call_sites section.
-+ */
-+#define __static_call(name)						\
-+({									\
-+	__ADDRESSABLE(STATIC_CALL_KEY(name));				\
-+	&STATIC_CALL_TRAMP(name);					\
-+})
-+
-+#define static_call(name)	__static_call(name)
-+
-+#else
-+
-+#define static_call(name)						\
-+	((typeof(STATIC_CALL_TRAMP(name))*)(STATIC_CALL_KEY(name).func))
-+
-+#endif /* CONFIG_HAVE_STATIC_CALL */
-+
- #endif /* _STATIC_CALL_TYPES_H */
-diff --git a/tools/include/linux/static_call_types.h b/tools/include/linux/static_call_types.h
-index 89135bb35..08f78b1b8 100644
---- a/tools/include/linux/static_call_types.h
-+++ b/tools/include/linux/static_call_types.h
-@@ -4,6 +4,7 @@
- 
- #include <linux/types.h>
- #include <linux/stringify.h>
-+#include <linux/compiler.h>
- 
- #define STATIC_CALL_KEY_PREFIX		__SCK__
- #define STATIC_CALL_KEY_PREFIX_STR	__stringify(STATIC_CALL_KEY_PREFIX)
-@@ -32,4 +33,30 @@ struct static_call_site {
- 	s32 key;
- };
- 
-+#define DECLARE_STATIC_CALL(name, func)					\
-+	extern struct static_call_key STATIC_CALL_KEY(name);		\
-+	extern typeof(func) STATIC_CALL_TRAMP(name);
-+
-+#ifdef CONFIG_HAVE_STATIC_CALL
-+
-+/*
-+ * __ADDRESSABLE() is used to ensure the key symbol doesn't get stripped from
-+ * the symbol table so that objtool can reference it when it generates the
-+ * .static_call_sites section.
-+ */
-+#define __static_call(name)						\
-+({									\
-+	__ADDRESSABLE(STATIC_CALL_KEY(name));				\
-+	&STATIC_CALL_TRAMP(name);					\
-+})
-+
-+#define static_call(name)	__static_call(name)
-+
-+#else
-+
-+#define static_call(name)						\
-+	((typeof(STATIC_CALL_TRAMP(name))*)(STATIC_CALL_KEY(name).func))
-+
-+#endif /* CONFIG_HAVE_STATIC_CALL */
-+
- #endif /* _STATIC_CALL_TYPES_H */
--- 
-2.30.0
-
-From 2f44200d3f3d6e6abab4e5529335f7852936f3a1 Mon Sep 17 00:00:00 2001
-From: Peter Zijlstra <peterz@infradead.org>
-Date: Mon, 18 Jan 2021 15:12:16 +0100
-Subject: [PATCH] static_call/x86: Add __static_call_return0()
-
-Provide a stub function that return 0 and wire up the static call site
-patching to replace the CALL with a single 5 byte instruction that
-clears %RAX, the return value register.
-
-The function can be cast to any function pointer type that has a
-single %RAX return (including pointers). Also provide a version that
-returns an int for convenience. We are clearing the entire %RAX register
-in any case, whether the return value is 32 or 64 bits, since %RAX is
-always a scratch register anyway.
-
-Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
-Signed-off-by: Frederic Weisbecker <frederic@kernel.org>
-Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
-Link: https://lkml.kernel.org/r/20210118141223.123667-2-frederic@kernel.org
-Signed-off-by: torvic9 <torvic9@mailbox.org>
----
- arch/x86/kernel/static_call.c | 17 +++++++++++++++--
- include/linux/static_call.h   | 12 ++++++++++++
- kernel/static_call.c          |  5 +++++
- 3 files changed, 32 insertions(+), 2 deletions(-)
-
-diff --git a/arch/x86/kernel/static_call.c b/arch/x86/kernel/static_call.c
-index ca9a380d9..9442c4136 100644
---- a/arch/x86/kernel/static_call.c
-+++ b/arch/x86/kernel/static_call.c
-@@ -11,14 +11,26 @@ enum insn_type {
- 	RET = 3,  /* tramp / site cond-tail-call */
- };
- 
-+/*
-+ * data16 data16 xorq %rax, %rax - a single 5 byte instruction that clears %rax
-+ * The REX.W cancels the effect of any data16.
-+ */
-+static const u8 xor5rax[] = { 0x66, 0x66, 0x48, 0x31, 0xc0 };
-+
- static void __ref __static_call_transform(void *insn, enum insn_type type, void *func)
- {
-+	const void *emulate = NULL;
- 	int size = CALL_INSN_SIZE;
- 	const void *code;
- 
- 	switch (type) {
- 	case CALL:
- 		code = text_gen_insn(CALL_INSN_OPCODE, insn, func);
-+		if (func == &__static_call_return0) {
-+			emulate = code;
-+			code = &xor5rax;
-+		}
-+
- 		break;
- 
- 	case NOP:
-@@ -41,7 +53,7 @@ static void __ref __static_call_transform(void *insn, enum insn_type type, void
- 	if (unlikely(system_state == SYSTEM_BOOTING))
- 		return text_poke_early(insn, code, size);
- 
--	text_poke_bp(insn, code, size, NULL);
-+	text_poke_bp(insn, code, size, emulate);
- }
- 
- static void __static_call_validate(void *insn, bool tail)
-@@ -54,7 +66,8 @@ static void __static_call_validate(void *insn, bool tail)
- 			return;
- 	} else {
- 		if (opcode == CALL_INSN_OPCODE ||
--		    !memcmp(insn, ideal_nops[NOP_ATOMIC5], 5))
-+		    !memcmp(insn, ideal_nops[NOP_ATOMIC5], 5) ||
-+		    !memcmp(insn, xor5rax, 5))
- 			return;
- 	}
- 
-diff --git a/include/linux/static_call.h b/include/linux/static_call.h
-index a2c064585..bd6735d10 100644
---- a/include/linux/static_call.h
-+++ b/include/linux/static_call.h
-@@ -142,6 +142,8 @@ extern void __static_call_update(struct static_call_key *key, void *tramp, void
- extern int static_call_mod_init(struct module *mod);
- extern int static_call_text_reserved(void *start, void *end);
- 
-+extern long __static_call_return0(void);
-+
- #define DEFINE_STATIC_CALL(name, _func)					\
- 	DECLARE_STATIC_CALL(name, _func);				\
- 	struct static_call_key STATIC_CALL_KEY(name) = {		\
-@@ -206,6 +208,11 @@ static inline int static_call_text_reserved(void *start, void *end)
- 	return 0;
- }
- 
-+static inline long __static_call_return0(void)
-+{
-+	return 0;
-+}
-+
- #define EXPORT_STATIC_CALL(name)					\
- 	EXPORT_SYMBOL(STATIC_CALL_KEY(name));				\
- 	EXPORT_SYMBOL(STATIC_CALL_TRAMP(name))
-@@ -222,6 +229,11 @@ struct static_call_key {
- 	void *func;
- };
- 
-+static inline long __static_call_return0(void)
-+{
-+	return 0;
-+}
-+
- #define DEFINE_STATIC_CALL(name, _func)					\
- 	DECLARE_STATIC_CALL(name, _func);				\
- 	struct static_call_key STATIC_CALL_KEY(name) = {		\
-diff --git a/kernel/static_call.c b/kernel/static_call.c
-index 84565c2a4..0bc11b5ce 100644
---- a/kernel/static_call.c
-+++ b/kernel/static_call.c
-@@ -438,6 +438,11 @@ int __init static_call_init(void)
- }
- early_initcall(static_call_init);
- 
-+long __static_call_return0(void)
-+{
-+	return 0;
-+}
-+
- #ifdef CONFIG_STATIC_CALL_SELFTEST
- 
- static int func_a(int x)
--- 
-2.30.0
-
-From 50ace20f2cfecd90c88edaf58400b362f42f2960 Mon Sep 17 00:00:00 2001
-From: Frederic Weisbecker <frederic@kernel.org>
-Date: Mon, 18 Jan 2021 15:12:17 +0100
-Subject: [PATCH] static_call: Provide DEFINE_STATIC_CALL_RET0()
-
-DECLARE_STATIC_CALL() must pass the original function targeted for a
-given static call. But DEFINE_STATIC_CALL() may want to initialize it as
-off. In this case we can't pass NULL (for functions without return value)
-or __static_call_return0 (for functions returning a value) directly
-to DEFINE_STATIC_CALL() as that may trigger a static call redeclaration
-with a different function prototype. Type casts neither can work around
-that as they don't get along with typeof().
-
-The proper way to do that for functions that don't return a value is
-to use DEFINE_STATIC_CALL_NULL(). But functions returning a actual value
-don't have an equivalent yet.
-
-Provide DEFINE_STATIC_CALL_RET0() to solve this situation.
-
-Signed-off-by: Frederic Weisbecker <frederic@kernel.org>
-Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
-Link: https://lkml.kernel.org/r/20210118141223.123667-3-frederic@kernel.org
-Signed-off-by: torvic9 <torvic9@mailbox.org>
----
- include/linux/static_call.h | 22 ++++++++++++++--------
- 1 file changed, 14 insertions(+), 8 deletions(-)
-
-diff --git a/include/linux/static_call.h b/include/linux/static_call.h
-index bd6735d10..d69dd8b97 100644
---- a/include/linux/static_call.h
-+++ b/include/linux/static_call.h
-@@ -144,13 +144,13 @@ extern int static_call_text_reserved(void *start, void *end);
- 
- extern long __static_call_return0(void);
- 
--#define DEFINE_STATIC_CALL(name, _func)					\
-+#define __DEFINE_STATIC_CALL(name, _func, _func_init)			\
- 	DECLARE_STATIC_CALL(name, _func);				\
- 	struct static_call_key STATIC_CALL_KEY(name) = {		\
--		.func = _func,						\
-+		.func = _func_init,					\
- 		.type = 1,						\
- 	};								\
--	ARCH_DEFINE_STATIC_CALL_TRAMP(name, _func)
-+	ARCH_DEFINE_STATIC_CALL_TRAMP(name, _func_init)
- 
- #define DEFINE_STATIC_CALL_NULL(name, _func)				\
- 	DECLARE_STATIC_CALL(name, _func);				\
-@@ -178,12 +178,12 @@ struct static_call_key {
- 	void *func;
- };
- 
--#define DEFINE_STATIC_CALL(name, _func)					\
-+#define __DEFINE_STATIC_CALL(name, _func, _func_init)			\
- 	DECLARE_STATIC_CALL(name, _func);				\
- 	struct static_call_key STATIC_CALL_KEY(name) = {		\
--		.func = _func,						\
-+		.func = _func_init,					\
- 	};								\
--	ARCH_DEFINE_STATIC_CALL_TRAMP(name, _func)
-+	ARCH_DEFINE_STATIC_CALL_TRAMP(name, _func_init)
- 
- #define DEFINE_STATIC_CALL_NULL(name, _func)				\
- 	DECLARE_STATIC_CALL(name, _func);				\
-@@ -234,10 +234,10 @@ static inline long __static_call_return0(void)
- 	return 0;
- }
- 
--#define DEFINE_STATIC_CALL(name, _func)					\
-+#define __DEFINE_STATIC_CALL(name, _func, _func_init)			\
- 	DECLARE_STATIC_CALL(name, _func);				\
- 	struct static_call_key STATIC_CALL_KEY(name) = {		\
--		.func = _func,						\
-+		.func = _func_init,					\
- 	}
- 
- #define DEFINE_STATIC_CALL_NULL(name, _func)				\
-@@ -286,4 +286,10 @@ static inline int static_call_text_reserved(void *start, void *end)
- 
- #endif /* CONFIG_HAVE_STATIC_CALL */
- 
-+#define DEFINE_STATIC_CALL(name, _func)					\
-+	__DEFINE_STATIC_CALL(name, _func, _func)
-+
-+#define DEFINE_STATIC_CALL_RET0(name, _func)				\
-+	__DEFINE_STATIC_CALL(name, _func, __static_call_return0)
-+
- #endif /* _LINUX_STATIC_CALL_H */
--- 
-2.30.0
-
-From 5759bcdb871f7f73b033643cd27d6cec33280540 Mon Sep 17 00:00:00 2001
-From: Michal Hocko <mhocko@kernel.org>
-Date: Mon, 18 Jan 2021 15:12:19 +0100
-Subject: [PATCH] preempt: Introduce CONFIG_PREEMPT_DYNAMIC
-
-Preemption mode selection is currently hardcoded on Kconfig choices.
-Introduce a dedicated option to tune preemption flavour at boot time,
-
-This will be only available on architectures efficiently supporting
-static calls in order not to tempt with the feature against additional
-overhead that might be prohibitive or undesirable.
-
-CONFIG_PREEMPT_DYNAMIC is automatically selected by CONFIG_PREEMPT if
-the architecture provides the necessary support (CONFIG_STATIC_CALL_INLINE,
-CONFIG_GENERIC_ENTRY, and provide with __preempt_schedule_function() /
-__preempt_schedule_notrace_function()).
-
-Suggested-by: Peter Zijlstra <peterz@infradead.org>
-Signed-off-by: Frederic Weisbecker <frederic@kernel.org>
-Signed-off-by: Michal Hocko <mhocko@suse.com>
-[peterz: relax requirement to HAVE_STATIC_CALL]
-Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
-Link: https://lkml.kernel.org/r/20210118141223.123667-5-frederic@kernel.org
-Signed-off-by: torvic9 <torvic9@mailbox.org>
----
- .../admin-guide/kernel-parameters.txt         |  7 +++++++
- arch/Kconfig                                  |  9 +++++++++
- arch/x86/Kconfig                              |  1 +
- kernel/Kconfig.preempt                        | 19 +++++++++++++++++++
- 4 files changed, 36 insertions(+)
-
-diff --git a/Documentation/admin-guide/kernel-parameters.txt b/Documentation/admin-guide/kernel-parameters.txt
-index c722ec19c..e85486379 100644
---- a/Documentation/admin-guide/kernel-parameters.txt
-+++ b/Documentation/admin-guide/kernel-parameters.txt
-@@ -3916,6 +3916,13 @@
- 			Format: {"off"}
- 			Disable Hardware Transactional Memory
- 
-+	preempt=	[KNL]
-+			Select preemption mode if you have CONFIG_PREEMPT_DYNAMIC
-+			none - Limited to cond_resched() calls
-+			voluntary - Limited to cond_resched() and might_sleep() calls
-+			full - Any section that isn't explicitly preempt disabled
-+			       can be preempted anytime.
-+
- 	print-fatal-signals=
- 			[KNL] debug: print fatal signals
- 
-diff --git a/arch/Kconfig b/arch/Kconfig
-index 78c6f05b1..94d3dde8e 100644
---- a/arch/Kconfig
-+++ b/arch/Kconfig
-@@ -1090,6 +1090,15 @@ config HAVE_STATIC_CALL_INLINE
- 	bool
- 	depends on HAVE_STATIC_CALL
- 
-+config HAVE_PREEMPT_DYNAMIC
-+	bool
-+	depends on HAVE_STATIC_CALL
-+	depends on GENERIC_ENTRY
-+	help
-+	   Select this if the architecture support boot time preempt setting
-+	   on top of static calls. It is strongly advised to support inline
-+	   static call to avoid any overhead.
-+
- config ARCH_WANT_LD_ORPHAN_WARN
- 	bool
- 	help
-diff --git a/arch/x86/Kconfig b/arch/x86/Kconfig
-index 7b6dd10b1..d021da955 100644
---- a/arch/x86/Kconfig
-+++ b/arch/x86/Kconfig
-@@ -223,6 +223,7 @@ config X86
- 	select HAVE_STACK_VALIDATION		if X86_64
- 	select HAVE_STATIC_CALL
- 	select HAVE_STATIC_CALL_INLINE		if HAVE_STACK_VALIDATION
-+	select HAVE_PREEMPT_DYNAMIC
- 	select HAVE_RSEQ
- 	select HAVE_SYSCALL_TRACEPOINTS
- 	select HAVE_UNSTABLE_SCHED_CLOCK
-diff --git a/kernel/Kconfig.preempt b/kernel/Kconfig.preempt
-index bf82259cf..416017301 100644
---- a/kernel/Kconfig.preempt
-+++ b/kernel/Kconfig.preempt
-@@ -40,6 +40,7 @@ config PREEMPT
- 	depends on !ARCH_NO_PREEMPT
- 	select PREEMPTION
- 	select UNINLINE_SPIN_UNLOCK if !ARCH_INLINE_SPIN_UNLOCK
-+	select PREEMPT_DYNAMIC if HAVE_PREEMPT_DYNAMIC
- 	help
- 	  This option reduces the latency of the kernel by making
- 	  all kernel code (that is not executing in a critical section)
-@@ -80,3 +81,21 @@ config PREEMPT_COUNT
- config PREEMPTION
-        bool
-        select PREEMPT_COUNT
-+
-+config PREEMPT_DYNAMIC
-+	bool
-+	help
-+	  This option allows to define the preemption model on the kernel
-+	  command line parameter and thus override the default preemption
-+	  model defined during compile time.
-+
-+	  The feature is primarily interesting for Linux distributions which
-+	  provide a pre-built kernel binary to reduce the number of kernel
-+	  flavors they offer while still offering different usecases.
-+
-+	  The runtime overhead is negligible with HAVE_STATIC_CALL_INLINE enabled
-+	  but if runtime patching is not available for the specific architecture
-+	  then the potential overhead should be considered.
-+
-+	  Interesting if you want the same pre-built kernel should be used for
-+	  both Server and Desktop workloads.
--- 
-2.30.0
-
-From bf3054bb801cf566e65e5f3d060435dbfa4a2f36 Mon Sep 17 00:00:00 2001
-From: "Peter Zijlstra (Intel)" <peterz@infradead.org>
-Date: Mon, 18 Jan 2021 15:12:20 +0100
-Subject: [PATCH] preempt/dynamic: Provide cond_resched() and might_resched()
- static calls
-
-Provide static calls to control cond_resched() (called in !CONFIG_PREEMPT)
-and might_resched() (called in CONFIG_PREEMPT_VOLUNTARY) to that we
-can override their behaviour when preempt= is overriden.
-
-Since the default behaviour is full preemption, both their calls are
-ignored when preempt= isn't passed.
-
-[fweisbec: branch might_resched() directly to __cond_resched(), only
-           define static calls when PREEMPT_DYNAMIC]
-Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
-Signed-off-by: Frederic Weisbecker <frederic@kernel.org>
-Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
-Link: https://lkml.kernel.org/r/20210118141223.123667-6-frederic@kernel.org
-Signed-off-by: torvic9 <torvic9@mailbox.org>
----
- include/linux/kernel.h | 23 +++++++++++++++++++----
- include/linux/sched.h  | 27 ++++++++++++++++++++++++---
- kernel/sched/core.c    | 16 +++++++++++++---
- 3 files changed, 56 insertions(+), 10 deletions(-)
-
-diff --git a/include/linux/kernel.h b/include/linux/kernel.h
-index f7902d8c1..cfd3d349f 100644
---- a/include/linux/kernel.h
-+++ b/include/linux/kernel.h
-@@ -15,7 +15,7 @@
- #include <linux/typecheck.h>
- #include <linux/printk.h>
- #include <linux/build_bug.h>
--
-+#include <linux/static_call_types.h>
- #include <asm/byteorder.h>
- 
- #include <uapi/linux/kernel.h>
-@@ -81,11 +81,26 @@ struct pt_regs;
- struct user;
- 
- #ifdef CONFIG_PREEMPT_VOLUNTARY
--extern int _cond_resched(void);
--# define might_resched() _cond_resched()
-+
-+extern int __cond_resched(void);
-+# define might_resched() __cond_resched()
-+
-+#elif defined(CONFIG_PREEMPT_DYNAMIC)
-+
-+extern int __cond_resched(void);
-+
-+DECLARE_STATIC_CALL(might_resched, __cond_resched);
-+
-+static __always_inline void might_resched(void)
-+{
-+	static_call(might_resched)();
-+}
-+
- #else
-+
- # define might_resched() do { } while (0)
--#endif
-+
-+#endif /* CONFIG_PREEMPT_* */
- 
- #ifdef CONFIG_DEBUG_ATOMIC_SLEEP
- extern void ___might_sleep(const char *file, int line, int preempt_offset);
-diff --git a/include/linux/sched.h b/include/linux/sched.h
-index e1152227b..2f35594b8 100644
---- a/include/linux/sched.h
-+++ b/include/linux/sched.h
-@@ -1871,11 +1871,32 @@ static inline int test_tsk_need_resched(struct task_struct *tsk)
-  * value indicates whether a reschedule was done in fact.
-  * cond_resched_lock() will drop the spinlock before scheduling,
-  */
--#ifndef CONFIG_PREEMPTION
--extern int _cond_resched(void);
-+#if !defined(CONFIG_PREEMPTION) || defined(CONFIG_PREEMPT_DYNAMIC)
-+extern int __cond_resched(void);
-+
-+#ifdef CONFIG_PREEMPT_DYNAMIC
-+
-+DECLARE_STATIC_CALL(cond_resched, __cond_resched);
-+
-+static __always_inline int _cond_resched(void)
-+{
-+	return static_call(cond_resched)();
-+}
-+
- #else
-+
-+static inline int _cond_resched(void)
-+{
-+	return __cond_resched();
-+}
-+
-+#endif /* CONFIG_PREEMPT_DYNAMIC */
-+
-+#else
-+
- static inline int _cond_resched(void) { return 0; }
--#endif
-+
-+#endif /* !defined(CONFIG_PREEMPTION) || defined(CONFIG_PREEMPT_DYNAMIC) */
- 
- #define cond_resched() ({			\
- 	___might_sleep(__FILE__, __LINE__, 0);	\
-diff --git a/kernel/sched/core.c b/kernel/sched/core.c
-index be3a956c2..bc7b00b4b 100644
---- a/kernel/sched/core.c
-+++ b/kernel/sched/core.c
-@@ -6771,17 +6771,27 @@ SYSCALL_DEFINE0(sched_yield)
- 	return 0;
- }
- 
--#ifndef CONFIG_PREEMPTION
--int __sched _cond_resched(void)
-+#if !defined(CONFIG_PREEMPTION) || defined(CONFIG_PREEMPT_DYNAMIC)
-+int __sched __cond_resched(void)
- {
- 	if (should_resched(0)) {
- 		preempt_schedule_common();
- 		return 1;
- 	}
-+#ifndef CONFIG_PREEMPT_RCU
- 	rcu_all_qs();
-+#endif
- 	return 0;
- }
--EXPORT_SYMBOL(_cond_resched);
-+EXPORT_SYMBOL(__cond_resched);
-+#endif
-+
-+#ifdef CONFIG_PREEMPT_DYNAMIC
-+DEFINE_STATIC_CALL_RET0(cond_resched, __cond_resched);
-+EXPORT_STATIC_CALL(cond_resched);
-+
-+DEFINE_STATIC_CALL_RET0(might_resched, __cond_resched);
-+EXPORT_STATIC_CALL(might_resched);
- #endif
- 
- /*
--- 
-2.30.0
-
-From 8c98e8cf723c3ab2ac924b0942dd3b8074f874e5 Mon Sep 17 00:00:00 2001
-From: "Peter Zijlstra (Intel)" <peterz@infradead.org>
-Date: Mon, 18 Jan 2021 15:12:21 +0100
-Subject: [PATCH] preempt/dynamic: Provide preempt_schedule[_notrace]() static
- calls
-
-Provide static calls to control preempt_schedule[_notrace]()
-(called in CONFIG_PREEMPT) so that we can override their behaviour when
-preempt= is overriden.
-
-Since the default behaviour is full preemption, both their calls are
-initialized to the arch provided wrapper, if any.
-
-[fweisbec: only define static calls when PREEMPT_DYNAMIC, make it less
-           dependent on x86 with __preempt_schedule_func]
-Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
-Signed-off-by: Frederic Weisbecker <frederic@kernel.org>
-Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
-Link: https://lkml.kernel.org/r/20210118141223.123667-7-frederic@kernel.org
-Signed-off-by: torvic9 <torvic9@mailbox.org>
----
- arch/x86/include/asm/preempt.h | 34 ++++++++++++++++++++++++++--------
- kernel/sched/core.c            | 12 ++++++++++++
- 2 files changed, 38 insertions(+), 8 deletions(-)
-
-diff --git a/arch/x86/include/asm/preempt.h b/arch/x86/include/asm/preempt.h
-index 69485ca13..9b12dce9b 100644
---- a/arch/x86/include/asm/preempt.h
-+++ b/arch/x86/include/asm/preempt.h
-@@ -5,6 +5,7 @@
- #include <asm/rmwcc.h>
- #include <asm/percpu.h>
- #include <linux/thread_info.h>
-+#include <linux/static_call_types.h>
- 
- DECLARE_PER_CPU(int, __preempt_count);
- 
-@@ -103,16 +104,33 @@ static __always_inline bool should_resched(int preempt_offset)
- }
- 
- #ifdef CONFIG_PREEMPTION
--  extern asmlinkage void preempt_schedule_thunk(void);
--# define __preempt_schedule() \
--	asm volatile ("call preempt_schedule_thunk" : ASM_CALL_CONSTRAINT)
- 
--  extern asmlinkage void preempt_schedule(void);
--  extern asmlinkage void preempt_schedule_notrace_thunk(void);
--# define __preempt_schedule_notrace() \
--	asm volatile ("call preempt_schedule_notrace_thunk" : ASM_CALL_CONSTRAINT)
-+extern asmlinkage void preempt_schedule(void);
-+extern asmlinkage void preempt_schedule_thunk(void);
-+
-+#define __preempt_schedule_func preempt_schedule_thunk
-+
-+DECLARE_STATIC_CALL(preempt_schedule, __preempt_schedule_func);
-+
-+#define __preempt_schedule() \
-+do { \
-+	__ADDRESSABLE(STATIC_CALL_KEY(preempt_schedule)); \
-+	asm volatile ("call " STATIC_CALL_TRAMP_STR(preempt_schedule) : ASM_CALL_CONSTRAINT); \
-+} while (0)
-+
-+extern asmlinkage void preempt_schedule_notrace(void);
-+extern asmlinkage void preempt_schedule_notrace_thunk(void);
-+
-+#define __preempt_schedule_notrace_func preempt_schedule_notrace_thunk
-+
-+DECLARE_STATIC_CALL(preempt_schedule_notrace, __preempt_schedule_notrace_func);
-+
-+#define __preempt_schedule_notrace() \
-+do { \
-+	__ADDRESSABLE(STATIC_CALL_KEY(preempt_schedule_notrace)); \
-+	asm volatile ("call " STATIC_CALL_TRAMP_STR(preempt_schedule_notrace) : ASM_CALL_CONSTRAINT); \
-+} while (0)
- 
--  extern asmlinkage void preempt_schedule_notrace(void);
- #endif
- 
- #endif /* __ASM_PREEMPT_H */
-diff --git a/kernel/sched/core.c b/kernel/sched/core.c
-index bc7b00b4b..cd0c46fbe 100644
---- a/kernel/sched/core.c
-+++ b/kernel/sched/core.c
-@@ -5251,6 +5251,12 @@ asmlinkage __visible void __sched notrace preempt_schedule(void)
- NOKPROBE_SYMBOL(preempt_schedule);
- EXPORT_SYMBOL(preempt_schedule);
- 
-+#ifdef CONFIG_PREEMPT_DYNAMIC
-+DEFINE_STATIC_CALL(preempt_schedule, __preempt_schedule_func);
-+EXPORT_STATIC_CALL(preempt_schedule);
-+#endif
-+
-+
- /**
-  * preempt_schedule_notrace - preempt_schedule called by tracing
-  *
-@@ -5303,6 +5309,12 @@ asmlinkage __visible void __sched notrace preempt_schedule_notrace(void)
- }
- EXPORT_SYMBOL_GPL(preempt_schedule_notrace);
- 
-+#ifdef CONFIG_PREEMPT_DYNAMIC
-+DEFINE_STATIC_CALL(preempt_schedule_notrace, __preempt_schedule_notrace_func);
-+EXPORT_STATIC_CALL(preempt_schedule_notrace);
-+#endif
-+
-+
- #endif /* CONFIG_PREEMPTION */
- 
- /*
--- 
-2.30.0
-
-From 74345075999752a7a9c805fe5e2ec770345cd1ca Mon Sep 17 00:00:00 2001
-From: "Peter Zijlstra (Intel)" <peterz@infradead.org>
-Date: Mon, 18 Jan 2021 15:12:22 +0100
-Subject: [PATCH] preempt/dynamic: Provide irqentry_exit_cond_resched() static
- call
-
-Provide static call to control IRQ preemption (called in CONFIG_PREEMPT)
-so that we can override its behaviour when preempt= is overriden.
-
-Since the default behaviour is full preemption, its call is
-initialized to provide IRQ preemption when preempt= isn't passed.
-
-Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
-Signed-off-by: Frederic Weisbecker <frederic@kernel.org>
-Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
-Link: https://lkml.kernel.org/r/20210118141223.123667-8-frederic@kernel.org
-Signed-off-by: torvic9 <torvic9@mailbox.org>
----
- include/linux/entry-common.h |  4 ++++
- kernel/entry/common.c        | 10 +++++++++-
- 2 files changed, 13 insertions(+), 1 deletion(-)
-
-diff --git a/include/linux/entry-common.h b/include/linux/entry-common.h
-index ca86a00ab..1401c93b6 100644
---- a/include/linux/entry-common.h
-+++ b/include/linux/entry-common.h
-@@ -2,6 +2,7 @@
- #ifndef __LINUX_ENTRYCOMMON_H
- #define __LINUX_ENTRYCOMMON_H
- 
-+#include <linux/static_call_types.h>
- #include <linux/tracehook.h>
- #include <linux/syscalls.h>
- #include <linux/seccomp.h>
-@@ -453,6 +454,9 @@ irqentry_state_t noinstr irqentry_enter(struct pt_regs *regs);
-  * Conditional reschedule with additional sanity checks.
-  */
- void irqentry_exit_cond_resched(void);
-+#ifdef CONFIG_PREEMPT_DYNAMIC
-+DECLARE_STATIC_CALL(irqentry_exit_cond_resched, irqentry_exit_cond_resched);
-+#endif
- 
- /**
-  * irqentry_exit - Handle return from exception that used irqentry_enter()
-diff --git a/kernel/entry/common.c b/kernel/entry/common.c
-index 378341642..84fa7ec28 100644
---- a/kernel/entry/common.c
-+++ b/kernel/entry/common.c
-@@ -393,6 +393,9 @@ void irqentry_exit_cond_resched(void)
- 			preempt_schedule_irq();
- 	}
- }
-+#ifdef CONFIG_PREEMPT_DYNAMIC
-+DEFINE_STATIC_CALL(irqentry_exit_cond_resched, irqentry_exit_cond_resched);
-+#endif
- 
- noinstr void irqentry_exit(struct pt_regs *regs, irqentry_state_t state)
- {
-@@ -419,8 +422,13 @@ noinstr void irqentry_exit(struct pt_regs *regs, irqentry_state_t state)
- 		}
- 
- 		instrumentation_begin();
--		if (IS_ENABLED(CONFIG_PREEMPTION))
-+		if (IS_ENABLED(CONFIG_PREEMPTION)) {
-+#ifdef CONFIG_PREEMT_DYNAMIC
-+			static_call(irqentry_exit_cond_resched)();
-+#else
- 			irqentry_exit_cond_resched();
-+#endif
-+		}
- 		/* Covers both tracing and lockdep */
- 		trace_hardirqs_on();
- 		instrumentation_end();
--- 
-2.30.0
-
-From 4f8a0041162ab74ba5f89ee58f8aad59c4c85d22 Mon Sep 17 00:00:00 2001
-From: "Peter Zijlstra (Intel)" <peterz@infradead.org>
-Date: Mon, 18 Jan 2021 15:12:23 +0100
-Subject: [PATCH] preempt/dynamic: Support dynamic preempt with preempt= boot
- option
-
-Support the preempt= boot option and patch the static call sites
-accordingly.
-
-Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
-Signed-off-by: Frederic Weisbecker <frederic@kernel.org>
-Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
-Link: https://lkml.kernel.org/r/20210118141223.123667-9-frederic@kernel.org
-Signed-off-by: torvic9 <torvic9@mailbox.org>
----
- kernel/sched/core.c | 67 ++++++++++++++++++++++++++++++++++++++++++++-
- 1 file changed, 66 insertions(+), 1 deletion(-)
-
-diff --git a/kernel/sched/core.c b/kernel/sched/core.c
-index cd0c46fbe..0562992bf 100644
---- a/kernel/sched/core.c
-+++ b/kernel/sched/core.c
-@@ -12,6 +12,7 @@
- 
- #include "sched.h"
- 
-+#include <linux/entry-common.h>
- #include <linux/nospec.h>
- 
- #include <linux/kcov.h>
-@@ -5314,9 +5315,73 @@ DEFINE_STATIC_CALL(preempt_schedule_notrace, __preempt_schedule_notrace_func);
- EXPORT_STATIC_CALL(preempt_schedule_notrace);
- #endif
- 
--
- #endif /* CONFIG_PREEMPTION */
- 
-+#ifdef CONFIG_PREEMPT_DYNAMIC
-+
-+/*
-+ * SC:cond_resched
-+ * SC:might_resched
-+ * SC:preempt_schedule
-+ * SC:preempt_schedule_notrace
-+ * SC:irqentry_exit_cond_resched
-+ *
-+ *
-+ * NONE:
-+ *   cond_resched               <- __cond_resched
-+ *   might_resched              <- RET0
-+ *   preempt_schedule           <- NOP
-+ *   preempt_schedule_notrace   <- NOP
-+ *   irqentry_exit_cond_resched <- NOP
-+ *
-+ * VOLUNTARY:
-+ *   cond_resched               <- __cond_resched
-+ *   might_resched              <- __cond_resched
-+ *   preempt_schedule           <- NOP
-+ *   preempt_schedule_notrace   <- NOP
-+ *   irqentry_exit_cond_resched <- NOP
-+ *
-+ * FULL:
-+ *   cond_resched               <- RET0
-+ *   might_resched              <- RET0
-+ *   preempt_schedule           <- preempt_schedule
-+ *   preempt_schedule_notrace   <- preempt_schedule_notrace
-+ *   irqentry_exit_cond_resched <- irqentry_exit_cond_resched
-+ */
-+static int __init setup_preempt_mode(char *str)
-+{
-+	if (!strcmp(str, "none")) {
-+		static_call_update(cond_resched, __cond_resched);
-+		static_call_update(might_resched, (typeof(&__cond_resched)) __static_call_return0);
-+		static_call_update(preempt_schedule, (typeof(&preempt_schedule)) NULL);
-+		static_call_update(preempt_schedule_notrace, (typeof(&preempt_schedule_notrace)) NULL);
-+		static_call_update(irqentry_exit_cond_resched, (typeof(&irqentry_exit_cond_resched)) NULL);
-+		pr_info("Dynamic Preempt: %s\n", str);
-+	} else if (!strcmp(str, "voluntary")) {
-+		static_call_update(cond_resched, __cond_resched);
-+		static_call_update(might_resched, __cond_resched);
-+		static_call_update(preempt_schedule, (typeof(&preempt_schedule)) NULL);
-+		static_call_update(preempt_schedule_notrace, (typeof(&preempt_schedule_notrace)) NULL);
-+		static_call_update(irqentry_exit_cond_resched, (typeof(&irqentry_exit_cond_resched)) NULL);
-+		pr_info("Dynamic Preempt: %s\n", str);
-+	} else if (!strcmp(str, "full")) {
-+		static_call_update(cond_resched, (typeof(&__cond_resched)) __static_call_return0);
-+		static_call_update(might_resched, (typeof(&__cond_resched)) __static_call_return0);
-+		static_call_update(preempt_schedule, __preempt_schedule_func);
-+		static_call_update(preempt_schedule_notrace, __preempt_schedule_notrace_func);
-+		static_call_update(irqentry_exit_cond_resched, irqentry_exit_cond_resched);
-+		pr_info("Dynamic Preempt: %s\n", str);
-+	} else {
-+		pr_warn("Dynamic Preempt: Unsupported preempt mode %s, default to full\n", str);
-+		return 1;
-+	}
-+	return 0;
-+}
-+__setup("preempt=", setup_preempt_mode);
-+
-+#endif /* CONFIG_PREEMPT_DYNAMIC */
-+
-+
- /*
-  * This is the entry point to schedule() from kernel preemption
-  * off of irq context.
--- 
-2.30.0
-
-From 48dd9c490b9402ff7ca0a7ddecd486dba9450a44 Mon Sep 17 00:00:00 2001
-From: Peter Zijlstra <peterz@infradead.org>
-Date: Fri, 22 Jan 2021 13:01:58 +0100
-Subject: [PATCH] sched: Add /debug/sched_preempt
-
-Add a debugfs file to muck about with the preempt mode at runtime.
-
-Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
-Link: https://lkml.kernel.org/r/YAsGiUYf6NyaTplX@hirez.programming.kicks-ass.net
-Signed-off-by: torvic9 <torvic9@mailbox.org>
----
- kernel/sched/core.c | 135 +++++++++++++++++++++++++++++++++++++++++---
- 1 file changed, 126 insertions(+), 9 deletions(-)
-
-diff --git a/kernel/sched/core.c b/kernel/sched/core.c
-index 0562992bf..c65926641 100644
---- a/kernel/sched/core.c
-+++ b/kernel/sched/core.c
-@@ -5348,37 +5348,154 @@ EXPORT_STATIC_CALL(preempt_schedule_notrace);
-  *   preempt_schedule_notrace   <- preempt_schedule_notrace
-  *   irqentry_exit_cond_resched <- irqentry_exit_cond_resched
-  */
--static int __init setup_preempt_mode(char *str)
-+
-+enum {
-+	preempt_dynamic_none = 0,
-+	preempt_dynamic_voluntary,
-+	preempt_dynamic_full,
-+};
-+
-+static int preempt_dynamic_mode = preempt_dynamic_full;
-+
-+static int sched_dynamic_mode(const char *str)
- {
--	if (!strcmp(str, "none")) {
-+	if (!strcmp(str, "none"))
-+		return 0;
-+
-+	if (!strcmp(str, "voluntary"))
-+		return 1;
-+
-+	if (!strcmp(str, "full"))
-+		return 2;
-+
-+	return -1;
-+}
-+
-+static void sched_dynamic_update(int mode)
-+{
-+	/*
-+	 * Avoid {NONE,VOLUNTARY} -> FULL transitions from ever ending up in
-+	 * the ZERO state, which is invalid.
-+	 */
-+	static_call_update(cond_resched, __cond_resched);
-+	static_call_update(might_resched, __cond_resched);
-+	static_call_update(preempt_schedule, __preempt_schedule_func);
-+	static_call_update(preempt_schedule_notrace, __preempt_schedule_notrace_func);
-+	static_call_update(irqentry_exit_cond_resched, irqentry_exit_cond_resched);
-+
-+	switch (mode) {
-+	case preempt_dynamic_none:
- 		static_call_update(cond_resched, __cond_resched);
- 		static_call_update(might_resched, (typeof(&__cond_resched)) __static_call_return0);
- 		static_call_update(preempt_schedule, (typeof(&preempt_schedule)) NULL);
- 		static_call_update(preempt_schedule_notrace, (typeof(&preempt_schedule_notrace)) NULL);
- 		static_call_update(irqentry_exit_cond_resched, (typeof(&irqentry_exit_cond_resched)) NULL);
--		pr_info("Dynamic Preempt: %s\n", str);
--	} else if (!strcmp(str, "voluntary")) {
-+		pr_info("Dynamic Preempt: none\n");
-+		break;
-+
-+	case preempt_dynamic_voluntary:
- 		static_call_update(cond_resched, __cond_resched);
- 		static_call_update(might_resched, __cond_resched);
- 		static_call_update(preempt_schedule, (typeof(&preempt_schedule)) NULL);
- 		static_call_update(preempt_schedule_notrace, (typeof(&preempt_schedule_notrace)) NULL);
- 		static_call_update(irqentry_exit_cond_resched, (typeof(&irqentry_exit_cond_resched)) NULL);
--		pr_info("Dynamic Preempt: %s\n", str);
--	} else if (!strcmp(str, "full")) {
-+		pr_info("Dynamic Preempt: voluntary\n");
-+		break;
-+
-+	case preempt_dynamic_full:
- 		static_call_update(cond_resched, (typeof(&__cond_resched)) __static_call_return0);
- 		static_call_update(might_resched, (typeof(&__cond_resched)) __static_call_return0);
- 		static_call_update(preempt_schedule, __preempt_schedule_func);
- 		static_call_update(preempt_schedule_notrace, __preempt_schedule_notrace_func);
- 		static_call_update(irqentry_exit_cond_resched, irqentry_exit_cond_resched);
--		pr_info("Dynamic Preempt: %s\n", str);
--	} else {
--		pr_warn("Dynamic Preempt: Unsupported preempt mode %s, default to full\n", str);
-+		pr_info("Dynamic Preempt: full\n");
-+		break;
-+	}
-+
-+	preempt_dynamic_mode = mode;
-+}
-+
-+static int __init setup_preempt_mode(char *str)
-+{
-+	int mode = sched_dynamic_mode(str);
-+	if (mode < 0) {
-+		pr_warn("Dynamic Preempt: unsupported mode: %s\n", str);
- 		return 1;
- 	}
-+
-+	sched_dynamic_update(mode);
- 	return 0;
- }
- __setup("preempt=", setup_preempt_mode);
- 
-+#ifdef CONFIG_SCHED_DEBUG
-+
-+static ssize_t sched_dynamic_write(struct file *filp, const char __user *ubuf,
-+				   size_t cnt, loff_t *ppos)
-+{
-+	char buf[16];
-+	int mode;
-+
-+	if (cnt > 15)
-+		cnt = 15;
-+
-+	if (copy_from_user(&buf, ubuf, cnt))
-+		return -EFAULT;
-+
-+	buf[cnt] = 0;
-+	mode = sched_dynamic_mode(strstrip(buf));
-+	if (mode < 0)
-+		return mode;
-+
-+	sched_dynamic_update(mode);
-+
-+	*ppos += cnt;
-+
-+	return cnt;
-+}
-+
-+static int sched_dynamic_show(struct seq_file *m, void *v)
-+{
-+	static const char * preempt_modes[] = {
-+		"none", "voluntary", "full"
-+	};
-+	int i;
-+
-+	for (i = 0; i < ARRAY_SIZE(preempt_modes); i++) {
-+		if (preempt_dynamic_mode == i)
-+			seq_puts(m, "(");
-+		seq_puts(m, preempt_modes[i]);
-+		if (preempt_dynamic_mode == i)
-+			seq_puts(m, ")");
-+
-+		seq_puts(m, " ");
-+	}
-+
-+	seq_puts(m, "\n");
-+	return 0;
-+}
-+
-+static int sched_dynamic_open(struct inode *inode, struct file *filp)
-+{
-+	return single_open(filp, sched_dynamic_show, NULL);
-+}
-+
-+static const struct file_operations sched_dynamic_fops = {
-+	.open		= sched_dynamic_open,
-+	.write		= sched_dynamic_write,
-+	.read		= seq_read,
-+	.llseek		= seq_lseek,
-+	.release	= single_release,
-+};
-+
-+static __init int sched_init_debug_dynamic(void)
-+{
-+	debugfs_create_file("sched_preempt", 0644, NULL, NULL, &sched_dynamic_fops);
-+	return 0;
-+}
-+late_initcall(sched_init_debug_dynamic);
-+
-+#endif /* CONFIG_SCHED_DEBUG */
- #endif /* CONFIG_PREEMPT_DYNAMIC */
- 
- 
--- 
-2.30.0
-
-From 5e444f1cadde5cf3da2bd7a89631519806ac91f7 Mon Sep 17 00:00:00 2001
-From: Josh Poimboeuf <jpoimboe@redhat.com>
-Date: Wed, 27 Jan 2021 17:18:37 -0600
-Subject: [PATCH] static_call: Allow module use without exposing
- static_call_key
-
-When exporting static_call_key; with EXPORT_STATIC_CALL*(), the module
-can use static_call_update() to change the function called.  This is
-not desirable in general.
-
-Not exporting static_call_key however also disallows usage of
-static_call(), since objtool needs the key to construct the
-static_call_site.
-
-Solve this by allowing objtool to create the static_call_site using
-the trampoline address when it builds a module and cannot find the
-static_call_key symbol. The module loader will then try and map the
-trampole back to a key before it constructs the normal sites list.
-
-Doing this requires a trampoline -> key associsation, so add another
-magic section that keeps those.
-
-Originally-by: Peter Zijlstra (Intel) <peterz@infradead.org>
-Signed-off-by: Josh Poimboeuf <jpoimboe@redhat.com>
-Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
-Link: https://lkml.kernel.org/r/20210127231837.ifddpn7rhwdaepiu@treble
-Signed-off-by: torvic9 <torvic9@mailbox.org>
----
- arch/x86/include/asm/static_call.h      |  7 ++++
- include/asm-generic/vmlinux.lds.h       |  5 ++-
- include/linux/static_call.h             | 22 +++++++++-
- include/linux/static_call_types.h       | 27 +++++++++++-
- kernel/static_call.c                    | 55 ++++++++++++++++++++++++-
- tools/include/linux/static_call_types.h | 27 +++++++++++-
- tools/objtool/check.c                   | 17 +++++++-
- 7 files changed, 149 insertions(+), 11 deletions(-)
-
-diff --git a/arch/x86/include/asm/static_call.h b/arch/x86/include/asm/static_call.h
-index c37f11999..cbb67b603 100644
---- a/arch/x86/include/asm/static_call.h
-+++ b/arch/x86/include/asm/static_call.h
-@@ -37,4 +37,11 @@
- #define ARCH_DEFINE_STATIC_CALL_NULL_TRAMP(name)			\
- 	__ARCH_DEFINE_STATIC_CALL_TRAMP(name, "ret; nop; nop; nop; nop")
- 
-+
-+#define ARCH_ADD_TRAMP_KEY(name)					\
-+	asm(".pushsection .static_call_tramp_key, \"a\"		\n"	\
-+	    ".long " STATIC_CALL_TRAMP_STR(name) " - .		\n"	\
-+	    ".long " STATIC_CALL_KEY_STR(name) " - .		\n"	\
-+	    ".popsection					\n")
-+
- #endif /* _ASM_STATIC_CALL_H */
-diff --git a/include/asm-generic/vmlinux.lds.h b/include/asm-generic/vmlinux.lds.h
-index b2b3d81b1..b0871e282 100644
---- a/include/asm-generic/vmlinux.lds.h
-+++ b/include/asm-generic/vmlinux.lds.h
-@@ -393,7 +393,10 @@
- 	. = ALIGN(8);							\
- 	__start_static_call_sites = .;					\
- 	KEEP(*(.static_call_sites))					\
--	__stop_static_call_sites = .;
-+	__stop_static_call_sites = .;					\
-+	__start_static_call_tramp_key = .;				\
-+	KEEP(*(.static_call_tramp_key))					\
-+	__stop_static_call_tramp_key = .;
- 
- /*
-  * Allow architectures to handle ro_after_init data on their
-diff --git a/include/linux/static_call.h b/include/linux/static_call.h
-index d69dd8b97..85ecc789f 100644
---- a/include/linux/static_call.h
-+++ b/include/linux/static_call.h
-@@ -138,6 +138,12 @@ struct static_call_key {
- 	};
- };
- 
-+/* For finding the key associated with a trampoline */
-+struct static_call_tramp_key {
-+	s32 tramp;
-+	s32 key;
-+};
-+
- extern void __static_call_update(struct static_call_key *key, void *tramp, void *func);
- extern int static_call_mod_init(struct module *mod);
- extern int static_call_text_reserved(void *start, void *end);
-@@ -165,11 +171,18 @@ extern long __static_call_return0(void);
- #define EXPORT_STATIC_CALL(name)					\
- 	EXPORT_SYMBOL(STATIC_CALL_KEY(name));				\
- 	EXPORT_SYMBOL(STATIC_CALL_TRAMP(name))
--
- #define EXPORT_STATIC_CALL_GPL(name)					\
- 	EXPORT_SYMBOL_GPL(STATIC_CALL_KEY(name));			\
- 	EXPORT_SYMBOL_GPL(STATIC_CALL_TRAMP(name))
- 
-+/* Leave the key unexported, so modules can't change static call targets: */
-+#define EXPORT_STATIC_CALL_TRAMP(name)					\
-+	EXPORT_SYMBOL(STATIC_CALL_TRAMP(name));				\
-+	ARCH_ADD_TRAMP_KEY(name)
-+#define EXPORT_STATIC_CALL_TRAMP_GPL(name)				\
-+	EXPORT_SYMBOL_GPL(STATIC_CALL_TRAMP(name));			\
-+	ARCH_ADD_TRAMP_KEY(name)
-+
- #elif defined(CONFIG_HAVE_STATIC_CALL)
- 
- static inline int static_call_init(void) { return 0; }
-@@ -216,11 +229,16 @@ static inline long __static_call_return0(void)
- #define EXPORT_STATIC_CALL(name)					\
- 	EXPORT_SYMBOL(STATIC_CALL_KEY(name));				\
- 	EXPORT_SYMBOL(STATIC_CALL_TRAMP(name))
--
- #define EXPORT_STATIC_CALL_GPL(name)					\
- 	EXPORT_SYMBOL_GPL(STATIC_CALL_KEY(name));			\
- 	EXPORT_SYMBOL_GPL(STATIC_CALL_TRAMP(name))
- 
-+/* Leave the key unexported, so modules can't change static call targets: */
-+#define EXPORT_STATIC_CALL_TRAMP(name)					\
-+	EXPORT_SYMBOL(STATIC_CALL_TRAMP(name))
-+#define EXPORT_STATIC_CALL_TRAMP_GPL(name)				\
-+	EXPORT_SYMBOL_GPL(STATIC_CALL_TRAMP(name))
-+
- #else /* Generic implementation */
- 
- static inline int static_call_init(void) { return 0; }
-diff --git a/include/linux/static_call_types.h b/include/linux/static_call_types.h
-index 08f78b1b8..ae5662d36 100644
---- a/include/linux/static_call_types.h
-+++ b/include/linux/static_call_types.h
-@@ -10,6 +10,7 @@
- #define STATIC_CALL_KEY_PREFIX_STR	__stringify(STATIC_CALL_KEY_PREFIX)
- #define STATIC_CALL_KEY_PREFIX_LEN	(sizeof(STATIC_CALL_KEY_PREFIX_STR) - 1)
- #define STATIC_CALL_KEY(name)		__PASTE(STATIC_CALL_KEY_PREFIX, name)
-+#define STATIC_CALL_KEY_STR(name)	__stringify(STATIC_CALL_KEY(name))
- 
- #define STATIC_CALL_TRAMP_PREFIX	__SCT__
- #define STATIC_CALL_TRAMP_PREFIX_STR	__stringify(STATIC_CALL_TRAMP_PREFIX)
-@@ -39,17 +40,39 @@ struct static_call_site {
- 
- #ifdef CONFIG_HAVE_STATIC_CALL
- 
-+#define __raw_static_call(name)	(&STATIC_CALL_TRAMP(name))
-+
-+#ifdef CONFIG_HAVE_STATIC_CALL_INLINE
-+
- /*
-  * __ADDRESSABLE() is used to ensure the key symbol doesn't get stripped from
-  * the symbol table so that objtool can reference it when it generates the
-  * .static_call_sites section.
-  */
-+#define __STATIC_CALL_ADDRESSABLE(name) \
-+	__ADDRESSABLE(STATIC_CALL_KEY(name))
-+
- #define __static_call(name)						\
- ({									\
--	__ADDRESSABLE(STATIC_CALL_KEY(name));				\
--	&STATIC_CALL_TRAMP(name);					\
-+	__STATIC_CALL_ADDRESSABLE(name);				\
-+	__raw_static_call(name);					\
- })
- 
-+#else /* !CONFIG_HAVE_STATIC_CALL_INLINE */
-+
-+#define __STATIC_CALL_ADDRESSABLE(name)
-+#define __static_call(name)	__raw_static_call(name)
-+
-+#endif /* CONFIG_HAVE_STATIC_CALL_INLINE */
-+
-+#ifdef MODULE
-+#define __STATIC_CALL_MOD_ADDRESSABLE(name)
-+#define static_call_mod(name)	__raw_static_call(name)
-+#else
-+#define __STATIC_CALL_MOD_ADDRESSABLE(name) __STATIC_CALL_ADDRESSABLE(name)
-+#define static_call_mod(name)	__static_call(name)
-+#endif
-+
- #define static_call(name)	__static_call(name)
- 
- #else
-diff --git a/kernel/static_call.c b/kernel/static_call.c
-index 0bc11b5ce..6906c6ec4 100644
---- a/kernel/static_call.c
-+++ b/kernel/static_call.c
-@@ -12,6 +12,8 @@
- 
- extern struct static_call_site __start_static_call_sites[],
- 			       __stop_static_call_sites[];
-+extern struct static_call_tramp_key __start_static_call_tramp_key[],
-+				    __stop_static_call_tramp_key[];
- 
- static bool static_call_initialized;
- 
-@@ -323,10 +325,59 @@ static int __static_call_mod_text_reserved(void *start, void *end)
- 	return ret;
- }
- 
-+static unsigned long tramp_key_lookup(unsigned long addr)
-+{
-+	struct static_call_tramp_key *start = __start_static_call_tramp_key;
-+	struct static_call_tramp_key *stop = __stop_static_call_tramp_key;
-+	struct static_call_tramp_key *tramp_key;
-+
-+	for (tramp_key = start; tramp_key != stop; tramp_key++) {
-+		unsigned long tramp;
-+
-+		tramp = (long)tramp_key->tramp + (long)&tramp_key->tramp;
-+		if (tramp == addr)
-+			return (long)tramp_key->key + (long)&tramp_key->key;
-+	}
-+
-+	return 0;
-+}
-+
- static int static_call_add_module(struct module *mod)
- {
--	return __static_call_init(mod, mod->static_call_sites,
--				  mod->static_call_sites + mod->num_static_call_sites);
-+	struct static_call_site *start = mod->static_call_sites;
-+	struct static_call_site *stop = start + mod->num_static_call_sites;
-+	struct static_call_site *site;
-+
-+	for (site = start; site != stop; site++) {
-+		unsigned long addr = (unsigned long)static_call_key(site);
-+		unsigned long key;
-+
-+		/*
-+		 * Is the key is exported, 'addr' points to the key, which
-+		 * means modules are allowed to call static_call_update() on
-+		 * it.
-+		 *
-+		 * Otherwise, the key isn't exported, and 'addr' points to the
-+		 * trampoline so we need to lookup the key.
-+		 *
-+		 * We go through this dance to prevent crazy modules from
-+		 * abusing sensitive static calls.
-+		 */
-+		if (!kernel_text_address(addr))
-+			continue;
-+
-+		key = tramp_key_lookup(addr);
-+		if (!key) {
-+			pr_warn("Failed to fixup __raw_static_call() usage at: %ps\n",
-+				static_call_addr(site));
-+			return -EINVAL;
-+		}
-+
-+		site->key = (key - (long)&site->key) |
-+			    (site->key & STATIC_CALL_SITE_FLAGS);
-+	}
-+
-+	return __static_call_init(mod, start, stop);
- }
- 
- static void static_call_del_module(struct module *mod)
-diff --git a/tools/include/linux/static_call_types.h b/tools/include/linux/static_call_types.h
-index 08f78b1b8..ae5662d36 100644
---- a/tools/include/linux/static_call_types.h
-+++ b/tools/include/linux/static_call_types.h
-@@ -10,6 +10,7 @@
- #define STATIC_CALL_KEY_PREFIX_STR	__stringify(STATIC_CALL_KEY_PREFIX)
- #define STATIC_CALL_KEY_PREFIX_LEN	(sizeof(STATIC_CALL_KEY_PREFIX_STR) - 1)
- #define STATIC_CALL_KEY(name)		__PASTE(STATIC_CALL_KEY_PREFIX, name)
-+#define STATIC_CALL_KEY_STR(name)	__stringify(STATIC_CALL_KEY(name))
- 
- #define STATIC_CALL_TRAMP_PREFIX	__SCT__
- #define STATIC_CALL_TRAMP_PREFIX_STR	__stringify(STATIC_CALL_TRAMP_PREFIX)
-@@ -39,17 +40,39 @@ struct static_call_site {
- 
- #ifdef CONFIG_HAVE_STATIC_CALL
- 
-+#define __raw_static_call(name)	(&STATIC_CALL_TRAMP(name))
-+
-+#ifdef CONFIG_HAVE_STATIC_CALL_INLINE
-+
- /*
-  * __ADDRESSABLE() is used to ensure the key symbol doesn't get stripped from
-  * the symbol table so that objtool can reference it when it generates the
-  * .static_call_sites section.
-  */
-+#define __STATIC_CALL_ADDRESSABLE(name) \
-+	__ADDRESSABLE(STATIC_CALL_KEY(name))
-+
- #define __static_call(name)						\
- ({									\
--	__ADDRESSABLE(STATIC_CALL_KEY(name));				\
--	&STATIC_CALL_TRAMP(name);					\
-+	__STATIC_CALL_ADDRESSABLE(name);				\
-+	__raw_static_call(name);					\
- })
- 
-+#else /* !CONFIG_HAVE_STATIC_CALL_INLINE */
-+
-+#define __STATIC_CALL_ADDRESSABLE(name)
-+#define __static_call(name)	__raw_static_call(name)
-+
-+#endif /* CONFIG_HAVE_STATIC_CALL_INLINE */
-+
-+#ifdef MODULE
-+#define __STATIC_CALL_MOD_ADDRESSABLE(name)
-+#define static_call_mod(name)	__raw_static_call(name)
-+#else
-+#define __STATIC_CALL_MOD_ADDRESSABLE(name) __STATIC_CALL_ADDRESSABLE(name)
-+#define static_call_mod(name)	__static_call(name)
-+#endif
-+
- #define static_call(name)	__static_call(name)
- 
- #else
-diff --git a/tools/objtool/check.c b/tools/objtool/check.c
-index 5f8d3eed7..7bd96d681 100644
---- a/tools/objtool/check.c
-+++ b/tools/objtool/check.c
-@@ -502,8 +502,21 @@ static int create_static_call_sections(struct objtool_file *file)
- 
- 		key_sym = find_symbol_by_name(file->elf, tmp);
- 		if (!key_sym) {
--			WARN("static_call: can't find static_call_key symbol: %s", tmp);
--			return -1;
-+			if (!module) {
-+				WARN("static_call: can't find static_call_key symbol: %s", tmp);
-+				return -1;
-+			}
-+
-+			/*
-+			 * For modules(), the key might not be exported, which
-+			 * means the module can make static calls but isn't
-+			 * allowed to change them.
-+			 *
-+			 * In that case we temporarily set the key to be the
-+			 * trampoline address.  This is fixed up in
-+			 * static_call_add_module().
-+			 */
-+			key_sym = insn->call_dest;
- 		}
- 		free(key_name);
- 
--- 
-2.30.0
-
-From 936eba768e7d4701373115977db1dbe954b6f6af Mon Sep 17 00:00:00 2001
-From: Peter Zijlstra <peterz@infradead.org>
-Date: Mon, 25 Jan 2021 16:26:50 +0100
-Subject: [PATCH] sched: Harden PREEMPT_DYNAMIC
-
-Use the new EXPORT_STATIC_CALL_TRAMP() / static_call_mod() to unexport
-the static_call_key for the PREEMPT_DYNAMIC calls such that modules
-can no longer update these calls.
-
-Having modules change/hi-jack the preemption calls would be horrible.
-
-Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
-Signed-off-by: torvic9 <torvic9@mailbox.org>
----
- arch/x86/include/asm/preempt.h | 4 ++--
- include/linux/kernel.h         | 2 +-
- include/linux/sched.h          | 2 +-
- kernel/sched/core.c            | 8 ++++----
- 4 files changed, 8 insertions(+), 8 deletions(-)
-
-diff --git a/arch/x86/include/asm/preempt.h b/arch/x86/include/asm/preempt.h
-index 9b12dce9b..0aa96f824 100644
---- a/arch/x86/include/asm/preempt.h
-+++ b/arch/x86/include/asm/preempt.h
-@@ -114,7 +114,7 @@ DECLARE_STATIC_CALL(preempt_schedule, __preempt_schedule_func);
- 
- #define __preempt_schedule() \
- do { \
--	__ADDRESSABLE(STATIC_CALL_KEY(preempt_schedule)); \
-+	__STATIC_CALL_MOD_ADDRESSABLE(preempt_schedule); \
- 	asm volatile ("call " STATIC_CALL_TRAMP_STR(preempt_schedule) : ASM_CALL_CONSTRAINT); \
- } while (0)
- 
-@@ -127,7 +127,7 @@ DECLARE_STATIC_CALL(preempt_schedule_notrace, __preempt_schedule_notrace_func);
- 
- #define __preempt_schedule_notrace() \
- do { \
--	__ADDRESSABLE(STATIC_CALL_KEY(preempt_schedule_notrace)); \
-+	__STATIC_CALL_MOD_ADDRESSABLE(preempt_schedule_notrace); \
- 	asm volatile ("call " STATIC_CALL_TRAMP_STR(preempt_schedule_notrace) : ASM_CALL_CONSTRAINT); \
- } while (0)
- 
-diff --git a/include/linux/kernel.h b/include/linux/kernel.h
-index cfd3d349f..5b7ed6dc9 100644
---- a/include/linux/kernel.h
-+++ b/include/linux/kernel.h
-@@ -93,7 +93,7 @@ DECLARE_STATIC_CALL(might_resched, __cond_resched);
- 
- static __always_inline void might_resched(void)
- {
--	static_call(might_resched)();
-+	static_call_mod(might_resched)();
- }
- 
- #else
-diff --git a/include/linux/sched.h b/include/linux/sched.h
-index 2f35594b8..4d568288a 100644
---- a/include/linux/sched.h
-+++ b/include/linux/sched.h
-@@ -1880,7 +1880,7 @@ DECLARE_STATIC_CALL(cond_resched, __cond_resched);
- 
- static __always_inline int _cond_resched(void)
- {
--	return static_call(cond_resched)();
-+	return static_call_mod(cond_resched)();
- }
- 
- #else
-diff --git a/kernel/sched/core.c b/kernel/sched/core.c
-index c65926641..81e1e1921 100644
---- a/kernel/sched/core.c
-+++ b/kernel/sched/core.c
-@@ -5254,7 +5254,7 @@ EXPORT_SYMBOL(preempt_schedule);
- 
- #ifdef CONFIG_PREEMPT_DYNAMIC
- DEFINE_STATIC_CALL(preempt_schedule, __preempt_schedule_func);
--EXPORT_STATIC_CALL(preempt_schedule);
-+EXPORT_STATIC_CALL_TRAMP(preempt_schedule);
- #endif
- 
- 
-@@ -5312,7 +5312,7 @@ EXPORT_SYMBOL_GPL(preempt_schedule_notrace);
- 
- #ifdef CONFIG_PREEMPT_DYNAMIC
- DEFINE_STATIC_CALL(preempt_schedule_notrace, __preempt_schedule_notrace_func);
--EXPORT_STATIC_CALL(preempt_schedule_notrace);
-+EXPORT_STATIC_CALL_TRAMP(preempt_schedule_notrace);
- #endif
- 
- #endif /* CONFIG_PREEMPTION */
-@@ -6982,10 +6982,10 @@ EXPORT_SYMBOL(__cond_resched);
- 
- #ifdef CONFIG_PREEMPT_DYNAMIC
- DEFINE_STATIC_CALL_RET0(cond_resched, __cond_resched);
--EXPORT_STATIC_CALL(cond_resched);
-+EXPORT_STATIC_CALL_TRAMP(cond_resched);
- 
- DEFINE_STATIC_CALL_RET0(might_resched, __cond_resched);
--EXPORT_STATIC_CALL(might_resched);
-+EXPORT_STATIC_CALL_TRAMP(might_resched);
- #endif
- 
- /*
--- 
-2.30.0
-
 From 2c3496a02cb06ffe957854d8488a5799d7bfb252 Mon Sep 17 00:00:00 2001
 From: Sven Schnelle <svens@linux.ibm.com>
 Date: Tue, 9 Feb 2021 16:07:11 +0100
@@ -5633,73 +4053,1191 @@ index 0dfdd5279..10a1522b1 100644
 -- 
 2.30.1
 
-From 82891be90f3c42dc964fd61b8b2a89de12940c9f Mon Sep 17 00:00:00 2001
+From b8e45e2a14bab684713f5dfc70c9e578c333dcdd Mon Sep 17 00:00:00 2001
 From: Peter Zijlstra <peterz@infradead.org>
-Date: Tue, 9 Feb 2021 22:02:33 +0100
-Subject: [PATCH] sched,x86: Allow !PREEMPT_DYNAMIC
+Date: Sat, 13 Feb 2021 13:10:35 +0100
+Subject: [PATCH] sched: Fix migration_cpu_stop() requeueing
 
-Allow building x86 with PREEMPT_DYNAMIC=n, this is needed for
-PREEMPT_RT as it makes no sense to not have full preemption on
-PREEMPT_RT.
+When affine_move_task(p) is called on a running task @p, which is not
+otherwise already changing affinity, we'll first set
+p->migration_pending and then do:
 
-Fixes: 8c98e8cf723c ("preempt/dynamic: Provide preempt_schedule[_notrace]() static calls")
-Reported-by: Mike Galbraith <efault@gmx.de>
+	 stop_one_cpu(cpu_of_rq(rq), migration_cpu_stop, &arg);
+
+This then gets us to migration_cpu_stop() running on the CPU that was
+previously running our victim task @p.
+
+If we find that our task is no longer on that runqueue (this can
+happen because of a concurrent migration due to load-balance etc.),
+then we'll end up at the:
+
+	} else if (dest_cpu < 1 || pending) {
+
+branch. Which we'll take because we set pending earlier. Here we first
+check if the task @p has already satisfied the affinity constraints,
+if so we bail early [A]. Otherwise we'll reissue migration_cpu_stop()
+onto the CPU that is now hosting our task @p:
+
+	stop_one_cpu_nowait(cpu_of(rq), migration_cpu_stop,
+			    &pending->arg, &pending->stop_work);
+
+Except, we've never initialized pending->arg, which will be all 0s.
+
+This then results in running migration_cpu_stop() on the next CPU with
+arg->p == NULL, which gives the by now obvious result of fireworks.
+
+The cure is to change affine_move_task() to always use pending->arg,
+furthermore we can use the exact same pattern as the
+SCA_MIGRATE_ENABLE case, since we'll block on the pending->done
+completion anyway, no point in adding yet another completion in
+stop_one_cpu().
+
+This then gives a clear distinction between the two
+migration_cpu_stop() use cases:
+
+  - sched_exec() / migrate_task_to() : arg->pending == NULL
+  - affine_move_task() : arg->pending != NULL;
+
+And we can have it ignore p->migration_pending when !arg->pending. Any
+stop work from sched_exec() / migrate_task_to() is in addition to stop
+works from affine_move_task(), which will be sufficient to issue the
+completion.
+
+Fixes: 6d337eab041d ("sched: Fix migrate_disable() vs set_cpus_allowed_ptr()")
+Cc: stable@kernel.org
 Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
-Tested-by: Mike Galbraith <efault@gmx.de>
-Link: https://lkml.kernel.org/r/YCK1+JyFNxQnWeXK@hirez.programming.kicks-ass.net
+Reviewed-by: Valentin Schneider <valentin.schneider@arm.com>
+Link: https://lkml.kernel.org/r/20210224131355.357743989@infradead.org
 Signed-off-by: torvic9 <torvic9@mailbox.org>
 ---
- arch/x86/include/asm/preempt.h | 24 ++++++++++++++++++------
- 1 file changed, 18 insertions(+), 6 deletions(-)
+ kernel/sched/core.c | 39 ++++++++++++++++++++++++++++-----------
+ 1 file changed, 28 insertions(+), 11 deletions(-)
 
-diff --git a/arch/x86/include/asm/preempt.h b/arch/x86/include/asm/preempt.h
-index 0aa96f824..f8cb8af4d 100644
---- a/arch/x86/include/asm/preempt.h
-+++ b/arch/x86/include/asm/preempt.h
-@@ -110,6 +110,13 @@ extern asmlinkage void preempt_schedule_thunk(void);
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index ca2bb6295..79ddba55b 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -1922,6 +1922,24 @@ static int migration_cpu_stop(void *data)
+ 	rq_lock(rq, &rf);
  
- #define __preempt_schedule_func preempt_schedule_thunk
- 
-+extern asmlinkage void preempt_schedule_notrace(void);
-+extern asmlinkage void preempt_schedule_notrace_thunk(void);
+ 	pending = p->migration_pending;
++	if (pending && !arg->pending) {
++		/*
++		 * This happens from sched_exec() and migrate_task_to(),
++		 * neither of them care about pending and just want a task to
++		 * maybe move about.
++		 *
++		 * Even if there is a pending, we can ignore it, since
++		 * affine_move_task() will have it's own stop_work's in flight
++		 * which will manage the completion.
++		 *
++		 * Notably, pending doesn't need to match arg->pending. This can
++		 * happen when tripple concurrent affine_move_task() first sets
++		 * pending, then clears pending and eventually sets another
++		 * pending.
++		 */
++		pending = NULL;
++	}
 +
-+#define __preempt_schedule_notrace_func preempt_schedule_notrace_thunk
-+
-+#ifdef CONFIG_PREEMPT_DYNAMIC
-+
- DECLARE_STATIC_CALL(preempt_schedule, __preempt_schedule_func);
+ 	/*
+ 	 * If task_rq(p) != rq, it cannot be migrated here, because we're
+ 	 * holding rq->lock, if p->on_rq == 0 it cannot get enqueued because
+@@ -2194,10 +2212,6 @@ static int affine_move_task(struct rq *rq, struct task_struct *p, struct rq_flag
+ 			    int dest_cpu, unsigned int flags)
+ {
+ 	struct set_affinity_pending my_pending = { }, *pending = NULL;
+-	struct migration_arg arg = {
+-		.task = p,
+-		.dest_cpu = dest_cpu,
+-	};
+ 	bool complete = false;
  
- #define __preempt_schedule() \
-@@ -118,11 +125,6 @@ do { \
- 	asm volatile ("call " STATIC_CALL_TRAMP_STR(preempt_schedule) : ASM_CALL_CONSTRAINT); \
- } while (0)
+ 	/* Can the task run on the task's current CPU? If so, we're done */
+@@ -2235,6 +2249,12 @@ static int affine_move_task(struct rq *rq, struct task_struct *p, struct rq_flag
+ 			/* Install the request */
+ 			refcount_set(&my_pending.refs, 1);
+ 			init_completion(&my_pending.done);
++			my_pending.arg = (struct migration_arg) {
++				.task = p,
++				.dest_cpu = -1,		/* any */
++				.pending = &my_pending,
++			};
++
+ 			p->migration_pending = &my_pending;
+ 		} else {
+ 			pending = p->migration_pending;
+@@ -2265,12 +2285,6 @@ static int affine_move_task(struct rq *rq, struct task_struct *p, struct rq_flag
+ 		p->migration_flags &= ~MDF_PUSH;
+ 		task_rq_unlock(rq, p, rf);
  
--extern asmlinkage void preempt_schedule_notrace(void);
--extern asmlinkage void preempt_schedule_notrace_thunk(void);
+-		pending->arg = (struct migration_arg) {
+-			.task = p,
+-			.dest_cpu = -1,
+-			.pending = pending,
+-		};
 -
--#define __preempt_schedule_notrace_func preempt_schedule_notrace_thunk
+ 		stop_one_cpu_nowait(cpu_of(rq), migration_cpu_stop,
+ 				    &pending->arg, &pending->stop_work);
+ 
+@@ -2283,8 +2297,11 @@ static int affine_move_task(struct rq *rq, struct task_struct *p, struct rq_flag
+ 		 * is_migration_disabled(p) checks to the stopper, which will
+ 		 * run on the same CPU as said p.
+ 		 */
++		refcount_inc(&pending->refs); /* pending->{arg,stop_work} */
+ 		task_rq_unlock(rq, p, rf);
+-		stop_one_cpu(cpu_of(rq), migration_cpu_stop, &arg);
++
++		stop_one_cpu_nowait(cpu_of(rq), migration_cpu_stop,
++				    &pending->arg, &pending->stop_work);
+ 
+ 	} else {
+ 
+-- 
+2.30.1
+
+From 6430eb536a97036b1d529cbf383cfe36e41a2f97 Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Wed, 24 Feb 2021 11:50:39 +0100
+Subject: [PATCH] sched: Simplify migration_cpu_stop()
+
+When affine_move_task() issues a migration_cpu_stop(), the purpose of
+that function is to complete that @pending, not any random other
+p->migration_pending that might have gotten installed since.
+
+This realization much simplifies migration_cpu_stop() and allows
+further necessary steps to fix all this as it provides the guarantee
+that @pending's stopper will complete @pending (and not some random
+other @pending).
+
+Fixes: 6d337eab041d ("sched: Fix migrate_disable() vs set_cpus_allowed_ptr()")
+Cc: stable@kernel.org
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Valentin Schneider <valentin.schneider@arm.com>
+Link: https://lkml.kernel.org/r/20210224131355.430014682@infradead.org
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/core.c | 56 +++++++--------------------------------------
+ 1 file changed, 8 insertions(+), 48 deletions(-)
+
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 79ddba55b..088e8f492 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -1898,8 +1898,8 @@ static struct rq *__migrate_task(struct rq *rq, struct rq_flags *rf,
+  */
+ static int migration_cpu_stop(void *data)
+ {
+-	struct set_affinity_pending *pending;
+ 	struct migration_arg *arg = data;
++	struct set_affinity_pending *pending = arg->pending;
+ 	struct task_struct *p = arg->task;
+ 	int dest_cpu = arg->dest_cpu;
+ 	struct rq *rq = this_rq();
+@@ -1921,25 +1921,6 @@ static int migration_cpu_stop(void *data)
+ 	raw_spin_lock(&p->pi_lock);
+ 	rq_lock(rq, &rf);
+ 
+-	pending = p->migration_pending;
+-	if (pending && !arg->pending) {
+-		/*
+-		 * This happens from sched_exec() and migrate_task_to(),
+-		 * neither of them care about pending and just want a task to
+-		 * maybe move about.
+-		 *
+-		 * Even if there is a pending, we can ignore it, since
+-		 * affine_move_task() will have it's own stop_work's in flight
+-		 * which will manage the completion.
+-		 *
+-		 * Notably, pending doesn't need to match arg->pending. This can
+-		 * happen when tripple concurrent affine_move_task() first sets
+-		 * pending, then clears pending and eventually sets another
+-		 * pending.
+-		 */
+-		pending = NULL;
+-	}
 -
- DECLARE_STATIC_CALL(preempt_schedule_notrace, __preempt_schedule_notrace_func);
+ 	/*
+ 	 * If task_rq(p) != rq, it cannot be migrated here, because we're
+ 	 * holding rq->lock, if p->on_rq == 0 it cannot get enqueued because
+@@ -1950,31 +1931,20 @@ static int migration_cpu_stop(void *data)
+ 			goto out;
  
- #define __preempt_schedule_notrace() \
-@@ -131,6 +133,16 @@ do { \
- 	asm volatile ("call " STATIC_CALL_TRAMP_STR(preempt_schedule_notrace) : ASM_CALL_CONSTRAINT); \
- } while (0)
+ 		if (pending) {
+-			p->migration_pending = NULL;
++			if (p->migration_pending == pending)
++				p->migration_pending = NULL;
+ 			complete = true;
+ 		}
  
--#endif
-+#else /* PREEMPT_DYNAMIC */
-+
-+#define __preempt_schedule() \
-+	asm volatile ("call preempt_schedule_thunk" : ASM_CALL_CONSTRAINT);
-+
-+#define __preempt_schedule_notrace() \
-+	asm volatile ("call preempt_schedule_notrace_thunk" : ASM_CALL_CONSTRAINT);
-+
-+#endif /* PREEMPT_DYNAMIC */
-+
-+#endif /* PREEMPTION */
+-		/* migrate_enable() --  we must not race against SCA */
+-		if (dest_cpu < 0) {
+-			/*
+-			 * When this was migrate_enable() but we no longer
+-			 * have a @pending, a concurrent SCA 'fixed' things
+-			 * and we should be valid again. Nothing to do.
+-			 */
+-			if (!pending) {
+-				WARN_ON_ONCE(!cpumask_test_cpu(task_cpu(p), &p->cpus_mask));
+-				goto out;
+-			}
+-
++		if (dest_cpu < 0)
+ 			dest_cpu = cpumask_any_distribute(&p->cpus_mask);
+-		}
  
- #endif /* __ASM_PREEMPT_H */
+ 		if (task_on_rq_queued(p))
+ 			rq = __migrate_task(rq, &rf, p, dest_cpu);
+ 		else
+ 			p->wake_cpu = dest_cpu;
+ 
+-	} else if (dest_cpu < 0 || pending) {
++	} else if (pending) {
+ 		/*
+ 		 * This happens when we get migrated between migrate_enable()'s
+ 		 * preempt_enable() and scheduling the stopper task. At that
+@@ -1989,22 +1959,13 @@ static int migration_cpu_stop(void *data)
+ 		 * ->pi_lock, so the allowed mask is stable - if it got
+ 		 * somewhere allowed, we're done.
+ 		 */
+-		if (pending && cpumask_test_cpu(task_cpu(p), p->cpus_ptr)) {
+-			p->migration_pending = NULL;
++		if (cpumask_test_cpu(task_cpu(p), p->cpus_ptr)) {
++			if (p->migration_pending == pending)
++				p->migration_pending = NULL;
+ 			complete = true;
+ 			goto out;
+ 		}
+ 
+-		/*
+-		 * When this was migrate_enable() but we no longer have an
+-		 * @pending, a concurrent SCA 'fixed' things and we should be
+-		 * valid again. Nothing to do.
+-		 */
+-		if (!pending) {
+-			WARN_ON_ONCE(!cpumask_test_cpu(task_cpu(p), &p->cpus_mask));
+-			goto out;
+-		}
+-
+ 		/*
+ 		 * When migrate_enable() hits a rq mis-match we can't reliably
+ 		 * determine is_migration_disabled() and so have to chase after
+@@ -2022,7 +1983,6 @@ static int migration_cpu_stop(void *data)
+ 		complete_all(&pending->done);
+ 
+ 	/* For pending->{arg,stop_work} */
+-	pending = arg->pending;
+ 	if (pending && refcount_dec_and_test(&pending->refs))
+ 		wake_up_var(&pending->refs);
+ 
+-- 
+2.30.1
+
+From dbf983c0a5c37da2d476564792bd84e0e8f067fc Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Wed, 24 Feb 2021 11:15:23 +0100
+Subject: [PATCH] sched: Collate affine_move_task() stoppers
+
+The SCA_MIGRATE_ENABLE and task_running() cases are almost identical,
+collapse them to avoid further duplication.
+
+Fixes: 6d337eab041d ("sched: Fix migrate_disable() vs set_cpus_allowed_ptr()")
+Cc: stable@kernel.org
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Valentin Schneider <valentin.schneider@arm.com>
+Link: https://lkml.kernel.org/r/20210224131355.500108964@infradead.org
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/core.c | 23 ++++++++---------------
+ 1 file changed, 8 insertions(+), 15 deletions(-)
+
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 088e8f492..84b657f05 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -2239,30 +2239,23 @@ static int affine_move_task(struct rq *rq, struct task_struct *p, struct rq_flag
+ 		return -EINVAL;
+ 	}
+ 
+-	if (flags & SCA_MIGRATE_ENABLE) {
+-
+-		refcount_inc(&pending->refs); /* pending->{arg,stop_work} */
+-		p->migration_flags &= ~MDF_PUSH;
+-		task_rq_unlock(rq, p, rf);
+-
+-		stop_one_cpu_nowait(cpu_of(rq), migration_cpu_stop,
+-				    &pending->arg, &pending->stop_work);
+-
+-		return 0;
+-	}
+-
+ 	if (task_running(rq, p) || p->state == TASK_WAKING) {
+ 		/*
+-		 * Lessen races (and headaches) by delegating
+-		 * is_migration_disabled(p) checks to the stopper, which will
+-		 * run on the same CPU as said p.
++		 * MIGRATE_ENABLE gets here because 'p == current', but for
++		 * anything else we cannot do is_migration_disabled(), punt
++		 * and have the stopper function handle it all race-free.
+ 		 */
++
+ 		refcount_inc(&pending->refs); /* pending->{arg,stop_work} */
++		if (flags & SCA_MIGRATE_ENABLE)
++			p->migration_flags &= ~MDF_PUSH;
+ 		task_rq_unlock(rq, p, rf);
+ 
+ 		stop_one_cpu_nowait(cpu_of(rq), migration_cpu_stop,
+ 				    &pending->arg, &pending->stop_work);
+ 
++		if (flags & SCA_MIGRATE_ENABLE)
++			return 0;
+ 	} else {
+ 
+ 		if (!is_migration_disabled(p)) {
+-- 
+2.30.1
+
+From 9eca0f53b1c2f5acb85e84673e263bf996817a24 Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Wed, 24 Feb 2021 11:21:35 +0100
+Subject: [PATCH] sched: Optimize migration_cpu_stop()
+
+When the purpose of migration_cpu_stop() is to migrate the task to
+'any' valid CPU, don't migrate the task when it's already running on a
+valid CPU.
+
+Fixes: 6d337eab041d ("sched: Fix migrate_disable() vs set_cpus_allowed_ptr()")
+Cc: stable@kernel.org
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Valentin Schneider <valentin.schneider@arm.com>
+Link: https://lkml.kernel.org/r/20210224131355.569238629@infradead.org
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/core.c | 13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 84b657f05..ac05afbd9 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -1936,14 +1936,25 @@ static int migration_cpu_stop(void *data)
+ 			complete = true;
+ 		}
+ 
+-		if (dest_cpu < 0)
++		if (dest_cpu < 0) {
++			if (cpumask_test_cpu(task_cpu(p), &p->cpus_mask))
++				goto out;
++
+ 			dest_cpu = cpumask_any_distribute(&p->cpus_mask);
++		}
+ 
+ 		if (task_on_rq_queued(p))
+ 			rq = __migrate_task(rq, &rf, p, dest_cpu);
+ 		else
+ 			p->wake_cpu = dest_cpu;
+ 
++		/*
++		 * XXX __migrate_task() can fail, at which point we might end
++		 * up running on a dodgy CPU, AFAICT this can only happen
++		 * during CPU hotplug, at which point we'll get pushed out
++		 * anyway, so it's probably not a big deal.
++		 */
++
+ 	} else if (pending) {
+ 		/*
+ 		 * This happens when we get migrated between migrate_enable()'s
+-- 
+2.30.1
+
+From de8115ef5c83ef2c9941684019d59f4c2e5d16ce Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Wed, 24 Feb 2021 11:31:09 +0100
+Subject: [PATCH] sched: Fix affine_move_task() self-concurrency
+
+Consider:
+
+   sched_setaffinity(p, X);		sched_setaffinity(p, Y);
+
+Then the first will install p->migration_pending = &my_pending; and
+issue stop_one_cpu_nowait(pending); and the second one will read
+p->migration_pending and _also_ issue: stop_one_cpu_nowait(pending),
+the _SAME_ @pending.
+
+This causes stopper list corruption.
+
+Add set_affinity_pending::stop_pending, to indicate if a stopper is in
+progress.
+
+Fixes: 6d337eab041d ("sched: Fix migrate_disable() vs set_cpus_allowed_ptr()")
+Cc: stable@kernel.org
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Valentin Schneider <valentin.schneider@arm.com>
+Link: https://lkml.kernel.org/r/20210224131355.649146419@infradead.org
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/core.c | 15 ++++++++++++---
+ 1 file changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index ac05afbd9..4e4d100c1 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -1864,6 +1864,7 @@ struct migration_arg {
+ 
+ struct set_affinity_pending {
+ 	refcount_t		refs;
++	unsigned int		stop_pending;
+ 	struct completion	done;
+ 	struct cpu_stop_work	stop_work;
+ 	struct migration_arg	arg;
+@@ -1982,12 +1983,15 @@ static int migration_cpu_stop(void *data)
+ 		 * determine is_migration_disabled() and so have to chase after
+ 		 * it.
+ 		 */
++		WARN_ON_ONCE(!pending->stop_pending);
+ 		task_rq_unlock(rq, p, &rf);
+ 		stop_one_cpu_nowait(task_cpu(p), migration_cpu_stop,
+ 				    &pending->arg, &pending->stop_work);
+ 		return 0;
+ 	}
+ out:
++	if (pending)
++		pending->stop_pending = false;
+ 	task_rq_unlock(rq, p, &rf);
+ 
+ 	if (complete)
+@@ -2183,7 +2187,7 @@ static int affine_move_task(struct rq *rq, struct task_struct *p, struct rq_flag
+ 			    int dest_cpu, unsigned int flags)
+ {
+ 	struct set_affinity_pending my_pending = { }, *pending = NULL;
+-	bool complete = false;
++	bool stop_pending, complete = false;
+ 
+ 	/* Can the task run on the task's current CPU? If so, we're done */
+ 	if (cpumask_test_cpu(task_cpu(p), &p->cpus_mask)) {
+@@ -2256,14 +2260,19 @@ static int affine_move_task(struct rq *rq, struct task_struct *p, struct rq_flag
+ 		 * anything else we cannot do is_migration_disabled(), punt
+ 		 * and have the stopper function handle it all race-free.
+ 		 */
++		stop_pending = pending->stop_pending;
++		if (!stop_pending)
++			pending->stop_pending = true;
+ 
+ 		refcount_inc(&pending->refs); /* pending->{arg,stop_work} */
+ 		if (flags & SCA_MIGRATE_ENABLE)
+ 			p->migration_flags &= ~MDF_PUSH;
+ 		task_rq_unlock(rq, p, rf);
+ 
+-		stop_one_cpu_nowait(cpu_of(rq), migration_cpu_stop,
+-				    &pending->arg, &pending->stop_work);
++		if (!stop_pending) {
++			stop_one_cpu_nowait(cpu_of(rq), migration_cpu_stop,
++					    &pending->arg, &pending->stop_work);
++		}
+ 
+ 		if (flags & SCA_MIGRATE_ENABLE)
+ 			return 0;
+-- 
+2.30.1
+
+From a4c2579076dc6951709a8e425df8369ab6eb2f24 Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Wed, 24 Feb 2021 11:42:08 +0100
+Subject: [PATCH] sched: Simplify set_affinity_pending refcounts
+
+Now that we have set_affinity_pending::stop_pending to indicate if a
+stopper is in progress, and we have the guarantee that if that stopper
+exists, it will (eventually) complete our @pending we can simplify the
+refcount scheme by no longer counting the stopper thread.
+
+Fixes: 6d337eab041d ("sched: Fix migrate_disable() vs set_cpus_allowed_ptr()")
+Cc: stable@kernel.org
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Valentin Schneider <valentin.schneider@arm.com>
+Link: https://lkml.kernel.org/r/20210224131355.724130207@infradead.org
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/core.c | 32 ++++++++++++++++++++------------
+ 1 file changed, 20 insertions(+), 12 deletions(-)
+
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 4e4d100c1..98191218d 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -1862,6 +1862,10 @@ struct migration_arg {
+ 	struct set_affinity_pending	*pending;
+ };
+ 
++/*
++ * @refs: number of wait_for_completion()
++ * @stop_pending: is @stop_work in use
++ */
+ struct set_affinity_pending {
+ 	refcount_t		refs;
+ 	unsigned int		stop_pending;
+@@ -1997,10 +2001,6 @@ static int migration_cpu_stop(void *data)
+ 	if (complete)
+ 		complete_all(&pending->done);
+ 
+-	/* For pending->{arg,stop_work} */
+-	if (pending && refcount_dec_and_test(&pending->refs))
+-		wake_up_var(&pending->refs);
+-
+ 	return 0;
+ }
+ 
+@@ -2199,12 +2199,16 @@ static int affine_move_task(struct rq *rq, struct task_struct *p, struct rq_flag
+ 			push_task = get_task_struct(p);
+ 		}
+ 
++		/*
++		 * If there are pending waiters, but no pending stop_work,
++		 * then complete now.
++		 */
+ 		pending = p->migration_pending;
+-		if (pending) {
+-			refcount_inc(&pending->refs);
++		if (pending && !pending->stop_pending) {
+ 			p->migration_pending = NULL;
+ 			complete = true;
+ 		}
++
+ 		task_rq_unlock(rq, p, rf);
+ 
+ 		if (push_task) {
+@@ -2213,7 +2217,7 @@ static int affine_move_task(struct rq *rq, struct task_struct *p, struct rq_flag
+ 		}
+ 
+ 		if (complete)
+-			goto do_complete;
++			complete_all(&pending->done);
+ 
+ 		return 0;
+ 	}
+@@ -2264,9 +2268,9 @@ static int affine_move_task(struct rq *rq, struct task_struct *p, struct rq_flag
+ 		if (!stop_pending)
+ 			pending->stop_pending = true;
+ 
+-		refcount_inc(&pending->refs); /* pending->{arg,stop_work} */
+ 		if (flags & SCA_MIGRATE_ENABLE)
+ 			p->migration_flags &= ~MDF_PUSH;
++
+ 		task_rq_unlock(rq, p, rf);
+ 
+ 		if (!stop_pending) {
+@@ -2282,12 +2286,13 @@ static int affine_move_task(struct rq *rq, struct task_struct *p, struct rq_flag
+ 			if (task_on_rq_queued(p))
+ 				rq = move_queued_task(rq, rf, p, dest_cpu);
+ 
+-			p->migration_pending = NULL;
+-			complete = true;
++			if (!pending->stop_pending) {
++				p->migration_pending = NULL;
++				complete = true;
++			}
+ 		}
+ 		task_rq_unlock(rq, p, rf);
+ 
+-do_complete:
+ 		if (complete)
+ 			complete_all(&pending->done);
+ 	}
+@@ -2295,7 +2300,7 @@ static int affine_move_task(struct rq *rq, struct task_struct *p, struct rq_flag
+ 	wait_for_completion(&pending->done);
+ 
+ 	if (refcount_dec_and_test(&pending->refs))
+-		wake_up_var(&pending->refs);
++		wake_up_var(&pending->refs); /* No UaF, just an address */
+ 
+ 	/*
+ 	 * Block the original owner of &pending until all subsequent callers
+@@ -2303,6 +2308,9 @@ static int affine_move_task(struct rq *rq, struct task_struct *p, struct rq_flag
+ 	 */
+ 	wait_var_event(&my_pending.refs, !refcount_read(&my_pending.refs));
+ 
++	/* ARGH */
++	WARN_ON_ONCE(my_pending.stop_pending);
++
+ 	return 0;
+ }
+ 
+-- 
+2.30.1
+
+From fba111913e51a934eaad85734254eab801343836 Mon Sep 17 00:00:00 2001
+From: Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+Date: Wed, 17 Feb 2021 11:56:51 -0500
+Subject: [PATCH] sched/membarrier: fix missing local execution of
+ ipi_sync_rq_state()
+
+The function sync_runqueues_membarrier_state() should copy the
+membarrier state from the @mm received as parameter to each runqueue
+currently running tasks using that mm.
+
+However, the use of smp_call_function_many() skips the current runqueue,
+which is unintended. Replace by a call to on_each_cpu_mask().
+
+Fixes: 227a4aadc75b ("sched/membarrier: Fix p->mm->membarrier_state racy load")
+Reported-by: Nadav Amit <nadav.amit@gmail.com>
+Signed-off-by: Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Cc: stable@vger.kernel.org # 5.4.x+
+Link: https://lore.kernel.org/r/74F1E842-4A84-47BF-B6C2-5407DFDD4A4A@gmail.com
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/membarrier.c | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/kernel/sched/membarrier.c b/kernel/sched/membarrier.c
+index acdae625c..b5add64d9 100644
+--- a/kernel/sched/membarrier.c
++++ b/kernel/sched/membarrier.c
+@@ -471,9 +471,7 @@ static int sync_runqueues_membarrier_state(struct mm_struct *mm)
+ 	}
+ 	rcu_read_unlock();
+ 
+-	preempt_disable();
+-	smp_call_function_many(tmpmask, ipi_sync_rq_state, mm, 1);
+-	preempt_enable();
++	on_each_cpu_mask(tmpmask, ipi_sync_rq_state, mm, true);
+ 
+ 	free_cpumask_var(tmpmask);
+ 	cpus_read_unlock();
+-- 
+2.30.1
+
+From 560c86ed4c1ca92592c04a8b2032fb29f8556a90 Mon Sep 17 00:00:00 2001
+From: Valentin Schneider <valentin.schneider@arm.com>
+Date: Thu, 25 Feb 2021 10:22:30 +0100
+Subject: [PATCH] sched: Simplify migration_cpu_stop()
+
+Since, when ->stop_pending, only the stopper can uninstall
+p->migration_pending. This could simplify a few ifs, because:
+
+  (pending != NULL) => (pending == p->migration_pending)
+
+Also, the fatty comment above affine_move_task() probably needs a bit
+of gardening.
+
+Signed-off-by: Valentin Schneider <valentin.schneider@arm.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/core.c | 27 ++++++++++++++++++---------
+ 1 file changed, 18 insertions(+), 9 deletions(-)
+
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 98191218d..f9dfb3491 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -1926,6 +1926,12 @@ static int migration_cpu_stop(void *data)
+ 	raw_spin_lock(&p->pi_lock);
+ 	rq_lock(rq, &rf);
+ 
++	/*
++	 * If we were passed a pending, then ->stop_pending was set, thus
++	 * p->migration_pending must have remained stable.
++	 */
++	WARN_ON_ONCE(pending && pending != p->migration_pending);
++
+ 	/*
+ 	 * If task_rq(p) != rq, it cannot be migrated here, because we're
+ 	 * holding rq->lock, if p->on_rq == 0 it cannot get enqueued because
+@@ -1936,8 +1942,7 @@ static int migration_cpu_stop(void *data)
+ 			goto out;
+ 
+ 		if (pending) {
+-			if (p->migration_pending == pending)
+-				p->migration_pending = NULL;
++			p->migration_pending = NULL;
+ 			complete = true;
+ 		}
+ 
+@@ -1976,8 +1981,7 @@ static int migration_cpu_stop(void *data)
+ 		 * somewhere allowed, we're done.
+ 		 */
+ 		if (cpumask_test_cpu(task_cpu(p), p->cpus_ptr)) {
+-			if (p->migration_pending == pending)
+-				p->migration_pending = NULL;
++			p->migration_pending = NULL;
+ 			complete = true;
+ 			goto out;
+ 		}
+@@ -2165,16 +2169,21 @@ void do_set_cpus_allowed(struct task_struct *p, const struct cpumask *new_mask)
+  *
+  * (1) In the cases covered above. There is one more where the completion is
+  * signaled within affine_move_task() itself: when a subsequent affinity request
+- * cancels the need for an active migration. Consider:
++ * occurs after the stopper bailed out due to the targeted task still being
++ * Migrate-Disable. Consider:
+  *
+  *     Initial conditions: P0->cpus_mask = [0, 1]
+  *
+- *     P0@CPU0            P1                             P2
+- *
+- *     migrate_disable();
+- *     <preempted>
++ *     CPU0		  P1				P2
++ *     <P0>
++ *       migrate_disable();
++ *       <preempted>
+  *                        set_cpus_allowed_ptr(P0, [1]);
+  *                          <blocks>
++ *     <migration/0>
++ *       migration_cpu_stop()
++ *         is_migration_disabled()
++ *           <bails>
+  *                                                       set_cpus_allowed_ptr(P0, [0, 1]);
+  *                                                         <signal completion>
+  *                          <awakes>
+-- 
+2.30.1
+
+From eae7a59d5a1e9bcf9804bcbd006ddce5cf72f8f4 Mon Sep 17 00:00:00 2001
+From: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Date: Thu, 18 Feb 2021 18:31:24 +0100
+Subject: [PATCH] kcov: Remove kcov include from sched.h and move it to its
+ users.
+
+The recent addition of in_serving_softirq() to kconv.h results in
+compile failure on PREEMPT_RT because it requires
+task_struct::softirq_disable_cnt. This is not available if kconv.h is
+included from sched.h.
+
+It is not needed to include kconv.h from sched.h. All but the net/ user
+already include the kconv header file.
+
+Move the include of the kconv.h header from sched.h it its users.
+Additionally include sched.h from kconv.h to ensure that everything
+task_struct related is available.
+
+Signed-off-by: Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Acked-by: Johannes Berg <johannes@sipsolutions.net>
+Acked-by: Andrey Konovalov <andreyknvl@google.com>
+Link: https://lkml.kernel.org/r/20210218173124.iy5iyqv3a4oia4vv@linutronix.de
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ include/linux/kcov.h  | 1 +
+ include/linux/sched.h | 1 -
+ net/core/skbuff.c     | 1 +
+ net/mac80211/iface.c  | 1 +
+ net/mac80211/rx.c     | 1 +
+ 5 files changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/include/linux/kcov.h b/include/linux/kcov.h
+index 4e3037dc1..55dc338f6 100644
+--- a/include/linux/kcov.h
++++ b/include/linux/kcov.h
+@@ -2,6 +2,7 @@
+ #ifndef _LINUX_KCOV_H
+ #define _LINUX_KCOV_H
+ 
++#include <linux/sched.h>
+ #include <uapi/linux/kcov.h>
+ 
+ struct task_struct;
+diff --git a/include/linux/sched.h b/include/linux/sched.h
+index ef00bb221..cf245bc23 100644
+--- a/include/linux/sched.h
++++ b/include/linux/sched.h
+@@ -14,7 +14,6 @@
+ #include <linux/pid.h>
+ #include <linux/sem.h>
+ #include <linux/shm.h>
+-#include <linux/kcov.h>
+ #include <linux/mutex.h>
+ #include <linux/plist.h>
+ #include <linux/hrtimer.h>
+diff --git a/net/core/skbuff.c b/net/core/skbuff.c
+index 545a47227..420f23c0f 100644
+--- a/net/core/skbuff.c
++++ b/net/core/skbuff.c
+@@ -60,6 +60,7 @@
+ #include <linux/prefetch.h>
+ #include <linux/if_vlan.h>
+ #include <linux/mpls.h>
++#include <linux/kcov.h>
+ 
+ #include <net/protocol.h>
+ #include <net/dst.h>
+diff --git a/net/mac80211/iface.c b/net/mac80211/iface.c
+index b80c9b016..c127debdc 100644
+--- a/net/mac80211/iface.c
++++ b/net/mac80211/iface.c
+@@ -15,6 +15,7 @@
+ #include <linux/if_arp.h>
+ #include <linux/netdevice.h>
+ #include <linux/rtnetlink.h>
++#include <linux/kcov.h>
+ #include <net/mac80211.h>
+ #include <net/ieee80211_radiotap.h>
+ #include "ieee80211_i.h"
+diff --git a/net/mac80211/rx.c b/net/mac80211/rx.c
+index c1343c028..62047e93e 100644
+--- a/net/mac80211/rx.c
++++ b/net/mac80211/rx.c
+@@ -17,6 +17,7 @@
+ #include <linux/etherdevice.h>
+ #include <linux/rcupdate.h>
+ #include <linux/export.h>
++#include <linux/kcov.h>
+ #include <linux/bitops.h>
+ #include <net/mac80211.h>
+ #include <net/ieee80211_radiotap.h>
+-- 
+2.30.1
+
+From 8af20c5fe756a9ff556c9b520201b2d158874481 Mon Sep 17 00:00:00 2001
+From: Vincent Donnefort <vincent.donnefort@arm.com>
+Date: Thu, 25 Feb 2021 08:36:11 +0000
+Subject: [PATCH] sched/fair: Fix task utilization accountability in
+ compute_energy()
+
+find_energy_efficient_cpu() (feec()) computes for each perf_domain (pd) an
+energy delta as follows:
+
+  feec(task)
+    for_each_pd
+      base_energy = compute_energy(task, -1, pd)
+        -> for_each_cpu(pd)
+           -> cpu_util_next(cpu, task, -1)
+
+      energy_delta = compute_energy(task, dst_cpu, pd)
+        -> for_each_cpu(pd)
+           -> cpu_util_next(cpu, task, dst_cpu)
+      energy_delta -= base_energy
+
+Then it picks the best CPU as being the one that minimizes energy_delta.
+
+cpu_util_next() estimates the CPU utilization that would happen if the
+task was placed on dst_cpu as follows:
+
+  max(cpu_util + task_util, cpu_util_est + _task_util_est)
+
+The task contribution to the energy delta can then be either:
+
+  (1) _task_util_est, on a mostly idle CPU, where cpu_util is close to 0
+      and _task_util_est > cpu_util.
+  (2) task_util, on a mostly busy CPU, where cpu_util > _task_util_est.
+
+  (cpu_util_est doesn't appear here. It is 0 when a CPU is idle and
+   otherwise must be small enough so that feec() takes the CPU as a
+   potential target for the task placement)
+
+This is problematic for feec(), as cpu_util_next() might give an unfair
+advantage to a CPU which is mostly busy (2) compared to one which is
+mostly idle (1). _task_util_est being always bigger than task_util in
+feec() (as the task is waking up), the task contribution to the energy
+might look smaller on certain CPUs (2) and this breaks the energy
+comparison.
+
+This issue is, moreover, not sporadic. By starving idle CPUs, it keeps
+their cpu_util < _task_util_est (1) while others will maintain cpu_util >
+_task_util_est (2).
+
+Fix this problem by always using max(task_util, _task_util_est) as a task
+contribution to the energy (ENERGY_UTIL). The new estimated CPU
+utilization for the energy would then be:
+
+  max(cpu_util, cpu_util_est) + max(task_util, _task_util_est)
+
+compute_energy() still needs to know which OPP would be selected if the
+task would be migrated in the perf_domain (FREQUENCY_UTIL). Hence,
+cpu_util_next() is still used to estimate the maximum util within the pd.
+
+Signed-off-by: Vincent Donnefort <vincent.donnefort@arm.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Quentin Perret <qperret@google.com>
+Reviewed-by: Dietmar Eggemann <dietmar.eggemann@arm.com>
+Link: https://lkml.kernel.org/r/20210225083612.1113823-2-vincent.donnefort@arm.com
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/fair.c | 24 ++++++++++++++++++++----
+ 1 file changed, 20 insertions(+), 4 deletions(-)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index f1b55f9a0..b994db9d0 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -6518,8 +6518,24 @@ compute_energy(struct task_struct *p, int dst_cpu, struct perf_domain *pd)
+ 	 * its pd list and will not be accounted by compute_energy().
+ 	 */
+ 	for_each_cpu_and(cpu, pd_mask, cpu_online_mask) {
+-		unsigned long cpu_util, util_cfs = cpu_util_next(cpu, p, dst_cpu);
+-		struct task_struct *tsk = cpu == dst_cpu ? p : NULL;
++		unsigned long util_freq = cpu_util_next(cpu, p, dst_cpu);
++		unsigned long cpu_util, util_running = util_freq;
++		struct task_struct *tsk = NULL;
++
++		/*
++		 * When @p is placed on @cpu:
++		 *
++		 * util_running = max(cpu_util, cpu_util_est) +
++		 *		  max(task_util, _task_util_est)
++		 *
++		 * while cpu_util_next is: max(cpu_util + task_util,
++		 *			       cpu_util_est + _task_util_est)
++		 */
++		if (cpu == dst_cpu) {
++			tsk = p;
++			util_running =
++				cpu_util_next(cpu, p, -1) + task_util_est(p);
++		}
+ 
+ 		/*
+ 		 * Busy time computation: utilization clamping is not
+@@ -6527,7 +6543,7 @@ compute_energy(struct task_struct *p, int dst_cpu, struct perf_domain *pd)
+ 		 * is already enough to scale the EM reported power
+ 		 * consumption at the (eventually clamped) cpu_capacity.
+ 		 */
+-		sum_util += effective_cpu_util(cpu, util_cfs, cpu_cap,
++		sum_util += effective_cpu_util(cpu, util_running, cpu_cap,
+ 					       ENERGY_UTIL, NULL);
+ 
+ 		/*
+@@ -6537,7 +6553,7 @@ compute_energy(struct task_struct *p, int dst_cpu, struct perf_domain *pd)
+ 		 * NOTE: in case RT tasks are running, by default the
+ 		 * FREQUENCY_UTIL's utilization can be max OPP.
+ 		 */
+-		cpu_util = effective_cpu_util(cpu, util_cfs, cpu_cap,
++		cpu_util = effective_cpu_util(cpu, util_freq, cpu_cap,
+ 					      FREQUENCY_UTIL, tsk);
+ 		max_util = max(max_util, cpu_util);
+ 	}
+-- 
+2.30.1
+
+From 4537b36ee8a290376174b297d6812cba1375ea79 Mon Sep 17 00:00:00 2001
+From: Vincent Donnefort <vincent.donnefort@arm.com>
+Date: Thu, 25 Feb 2021 08:36:12 +0000
+Subject: [PATCH] sched/fair: use lsub_positive in cpu_util_next()
+
+The sub_positive local version is saving an explicit load-store and is
+enough for the cpu_util_next() usage.
+
+Signed-off-by: Vincent Donnefort <vincent.donnefort@arm.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Quentin Perret <qperret@google.com>
+Reviewed-by: Dietmar Eggemann <dietmar.eggemann@arm.com>
+Link: https://lkml.kernel.org/r/20210225083612.1113823-3-vincent.donnefort@arm.com
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/fair.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index b994db9d0..7b2fac0d4 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -6471,7 +6471,7 @@ static unsigned long cpu_util_next(int cpu, struct task_struct *p, int dst_cpu)
+ 	 * util_avg should already be correct.
+ 	 */
+ 	if (task_cpu(p) == cpu && dst_cpu != cpu)
+-		sub_positive(&util, task_util(p));
++		lsub_positive(&util, task_util(p));
+ 	else if (task_cpu(p) != cpu && dst_cpu == cpu)
+ 		util += task_util(p);
+ 
+-- 
+2.30.1
+
+From 95d3920902d198b78d489db7e11732661ef79357 Mon Sep 17 00:00:00 2001
+From: Valentin Schneider <valentin.schneider@arm.com>
+Date: Thu, 25 Feb 2021 17:56:56 +0000
+Subject: [PATCH] sched/fair: Fix shift-out-of-bounds in load_balance()
+
+Syzbot reported a handful of occurrences where an sd->nr_balance_failed can
+grow to much higher values than one would expect.
+
+A successful load_balance() resets it to 0; a failed one increments
+it. Once it gets to sd->cache_nice_tries + 3, this *should* trigger an
+active balance, which will either set it to sd->cache_nice_tries+1 or reset
+it to 0. However, in case the to-be-active-balanced task is not allowed to
+run on env->dst_cpu, then the increment is done without any further
+modification.
+
+This could then be repeated ad nauseam, and would explain the absurdly high
+values reported by syzbot (86, 149). VincentG noted there is value in
+letting sd->cache_nice_tries grow, so the shift itself should be
+fixed. That means preventing:
+
+  """
+  If the value of the right operand is negative or is greater than or equal
+  to the width of the promoted left operand, the behavior is undefined.
+  """
+
+Thus we need to cap the shift exponent to
+  BITS_PER_TYPE(typeof(lefthand)) - 1.
+
+I had a look around for other similar cases via coccinelle:
+
+  @expr@
+  position pos;
+  expression E1;
+  expression E2;
+  @@
+  (
+  E1 >> E2@pos
+  |
+  E1 >> E2@pos
+  )
+
+  @cst depends on expr@
+  position pos;
+  expression expr.E1;
+  constant cst;
+  @@
+  (
+  E1 >> cst@pos
+  |
+  E1 << cst@pos
+  )
+
+  @script:python depends on !cst@
+  pos << expr.pos;
+  exp << expr.E2;
+  @@
+  # Dirty hack to ignore constexpr
+  if exp.upper() != exp:
+     coccilib.report.print_report(pos[0], "Possible UB shift here")
+
+The only other match in kernel/sched is rq_clock_thermal() which employs
+sched_thermal_decay_shift, and that exponent is already capped to 10, so
+that one is fine.
+
+Fixes: 5a7f55590467 ("sched/fair: Relax constraint on task's load during load balance")
+Reported-by: syzbot+d7581744d5fd27c9fbe1@syzkaller.appspotmail.com
+Signed-off-by: Valentin Schneider <valentin.schneider@arm.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Link: http://lore.kernel.org/r/000000000000ffac1205b9a2112f@google.com
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/fair.c  | 3 +--
+ kernel/sched/sched.h | 7 +++++++
+ 2 files changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 7b2fac0d4..1af51a68c 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -7722,8 +7722,7 @@ static int detach_tasks(struct lb_env *env)
+ 			 * scheduler fails to find a good waiting task to
+ 			 * migrate.
+ 			 */
+-
+-			if ((load >> env->sd->nr_balance_failed) > env->imbalance)
++			if (shr_bound(load, env->sd->nr_balance_failed) > env->imbalance)
+ 				goto next;
+ 
+ 			env->imbalance -= load;
+diff --git a/kernel/sched/sched.h b/kernel/sched/sched.h
+index 0ddc9a6ff..bb8bb0658 100644
+--- a/kernel/sched/sched.h
++++ b/kernel/sched/sched.h
+@@ -204,6 +204,13 @@ static inline void update_avg(u64 *avg, u64 sample)
+ 	*avg += diff / 8;
+ }
+ 
++/*
++ * Shifting a value by an exponent greater *or equal* to the size of said value
++ * is UB; cap at size-1.
++ */
++#define shr_bound(val, shift)							\
++	(val >> min_t(typeof(shift), shift, BITS_PER_TYPE(typeof(val)) - 1))
++
+ /*
+  * !! For sched_setattr_nocheck() (kernel) only !!
+  *
+-- 
+2.30.1
+
+From 78ca1ab2718a5518171f2e7d0afad0b9752c4453 Mon Sep 17 00:00:00 2001
+From: Vincent Donnefort <vincent.donnefort@arm.com>
+Date: Thu, 25 Feb 2021 16:58:20 +0000
+Subject: [PATCH] sched/pelt: Fix task util_est update filtering
+
+Being called for each dequeue, util_est reduces the number of its updates
+by filtering out when the EWMA signal is different from the task util_avg
+by less than 1%. It is a problem for a sudden util_avg ramp-up. Due to the
+decay from a previous high util_avg, EWMA might now be close enough to
+the new util_avg. No update would then happen while it would leave
+ue.enqueued with an out-of-date value.
+
+Taking into consideration the two util_est members, EWMA and enqueued for
+the filtering, ensures, for both, an up-to-date value.
+
+This is for now an issue only for the trace probe that might return the
+stale value. Functional-wise, it isn't a problem, as the value is always
+accessed through max(enqueued, ewma).
+
+This problem has been observed using LISA's UtilConvergence:test_means on
+the sd845c board.
+
+No regression observed with Hackbench on sd845c and Perf-bench sched pipe
+on hikey/hikey960.
+
+Signed-off-by: Vincent Donnefort <vincent.donnefort@arm.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Reviewed-by: Dietmar Eggemann <dietmar.eggemann@arm.com>
+Reviewed-by: Vincent Guittot <vincent.guittot@linaro.org>
+Link: https://lkml.kernel.org/r/20210225165820.1377125-1-vincent.donnefort@arm.com
+Signed-off-by: torvic9 <torvic9@mailbox.org>
+---
+ kernel/sched/fair.c | 15 ++++++++++++---
+ 1 file changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 1af51a68c..f5d654133 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -3941,6 +3941,8 @@ static inline void util_est_dequeue(struct cfs_rq *cfs_rq,
+ 	trace_sched_util_est_cfs_tp(cfs_rq);
+ }
+ 
++#define UTIL_EST_MARGIN (SCHED_CAPACITY_SCALE / 100)
++
+ /*
+  * Check if a (signed) value is within a specified (unsigned) margin,
+  * based on the observation that:
+@@ -3958,7 +3960,7 @@ static inline void util_est_update(struct cfs_rq *cfs_rq,
+ 				   struct task_struct *p,
+ 				   bool task_sleep)
+ {
+-	long last_ewma_diff;
++	long last_ewma_diff, last_enqueued_diff;
+ 	struct util_est ue;
+ 
+ 	if (!sched_feat(UTIL_EST))
+@@ -3979,6 +3981,8 @@ static inline void util_est_update(struct cfs_rq *cfs_rq,
+ 	if (ue.enqueued & UTIL_AVG_UNCHANGED)
+ 		return;
+ 
++	last_enqueued_diff = ue.enqueued;
++
+ 	/*
+ 	 * Reset EWMA on utilization increases, the moving average is used only
+ 	 * to smooth utilization decreases.
+@@ -3992,12 +3996,17 @@ static inline void util_est_update(struct cfs_rq *cfs_rq,
+ 	}
+ 
+ 	/*
+-	 * Skip update of task's estimated utilization when its EWMA is
++	 * Skip update of task's estimated utilization when its members are
+ 	 * already ~1% close to its last activation value.
+ 	 */
+ 	last_ewma_diff = ue.enqueued - ue.ewma;
+-	if (within_margin(last_ewma_diff, (SCHED_CAPACITY_SCALE / 100)))
++	last_enqueued_diff -= ue.enqueued;
++	if (within_margin(last_ewma_diff, UTIL_EST_MARGIN)) {
++		if (!within_margin(last_enqueued_diff, UTIL_EST_MARGIN))
++			goto done;
++
+ 		return;
++	}
+ 
+ 	/*
+ 	 * To avoid overestimation of actual task utilization, skip updates if
 -- 
 2.30.1
 

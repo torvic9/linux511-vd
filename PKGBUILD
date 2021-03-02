@@ -11,7 +11,7 @@ _kernelname=-vd
 _sub=2
 #_rc=rc7
 pkgver=${_basekernel}.${_sub}
-pkgrel=3
+pkgrel=4
 _archpatch=20210301
 _prjc="r1"
 _stablequeue=79368accd6
@@ -49,8 +49,8 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver}.tar.{xz,sig
     # bfq fixes
     0012-block-bfq-fixes-and-improvements.patch
     # tip:sched/core
-    0013-tip-sched-core-20210301.patch
-    # 0013-tip-sched-core-no-dyn-preempt-20210301.patch # for use with ProjectC
+    0013-tip-sched-core-20210302.patch
+    # 0013-tip-sched-core-no-dyn-preempt-20210302.patch # for use with ProjectC
     # sched balance tweaks
     0014-sched-fair-misfit-task-load-balance-tweaks-v2.patch
     # rcu fixes
@@ -132,7 +132,7 @@ sha256sums=('904a5b3cbaf5264ef8da6c7a5445fa7ea19168ad77fb83a7cc1b8ba95d52d0a0'
             '18a84957915dd924cbdddfb031954f97e951bd96f5593fb1eb8c73bc4a61bd3f'
             '623a3b02b980fcd52bc7d230be1661ada7b557e3cd83c0560666e1f010bd3509'
             '9e86bfb28c4c9a30a116f57c24d57cf7488df2755198425522564b4e8f8015e7'
-            '44e051227927c78ffd8e85566495bbc661df427bc1c9e98518071ec195b69956'
+            '10c14fa338f4db9dbee9014a7f68641317aa25d0383633a4a467107f39cefc7b'
             '4214820327a243167570b54611830d7a227f79c398c256ba40924fab077e99f6'
             'a652bf7985cd0633ee12e61efb9dd898f28468e93caa852e210923fed92724fb'
             '49b29307ee96f85db5949866fd2f5a76502dd5be7564771febfe57c807b4f740'
@@ -190,6 +190,9 @@ prepare() {
 
   echo -e "\n${TB}* APPLYING PATCHES${TN}"
 
+  echo -e "\n---- Reverts:" # add reverts here
+  patch -Rp1 -i "../sched-fair-update_pick_idlest.revert"
+  
   # apply patch from the source array (should be a pacman feature)
   local filename filename2
   for filename in "${source[@]}"; do
@@ -200,8 +203,6 @@ prepare() {
         	patch -Np1 -i "../${filename}"
   	fi
   done
-  echo -e "\n---- Reverts:" # add reverts here
-  patch -Rp1 -i "../sched-fair-update_pick_idlest.revert"
 
   # kernel config
   echo -e "\n${TB}* KERNEL CONFIGURATION${TN}"

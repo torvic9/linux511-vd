@@ -87,7 +87,7 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver}.tar.{xz,sig
     2005-tune-cpufreq-ondemand-settings.patch
     2006-optimise-kernel-and-module-compression.patch
     # ntfs3 driver
-    2007-ntfs-rw-gpl-driver-implementation-by-paragon-v21.patch
+    2007-ntfs-rw-gpl-driver-implementation-by-paragon-v22.patch
     #
     # Project C (BMQ+PDS)
     # 3001-projectc511-${_prjc}-orig.patch::https://gitlab.com/alfredchen/linux-prjc/uploads/604a80e2e5ac99c431f0944e4e986aa6/prjc_v5.11-r1.patch
@@ -150,7 +150,7 @@ sha256sums=('904a5b3cbaf5264ef8da6c7a5445fa7ea19168ad77fb83a7cc1b8ba95d52d0a0'
             '4c0beb1f181e7ee22e978f447aaccc3bd7f326e861a5afb5798922b1e7efc2ec'
             '02d2c0e6b2459d4dbd6d4cecb3b269545a78b86cc9d2d3a0fda80bb3c3ee7604'
             '33752d734f2276e5f396da3512a7a7f47b8bb6037b70d17120fd5c30f807a8cd'
-            '24a024268e8ac2548078ad7ea3445a2331d21df6eb01f5caf9b1b42caf4241bb'
+            '9779225b284adb1febf8abbccf71e9d10795cd888204e79ca7d1be0dcdb3c5de'
             'cd96250876c30af9a1b5a7f8191ab8390842c993bd92f6987fb661e3edf1941e'
             '4b6698dab016c6b76eae4c4fa107a6c13806bc0dbfd143a06cebd07561a4080f'
             'defe5d56d9d93aa785c4ba4fe5f2682c00a9a3fdb19fedeeeb95aae8261d8c0e'

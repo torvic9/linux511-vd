@@ -1,0 +1,466 @@
+From 673da94cb85cf4e0a7b52fe284eec8a4eb98d271 Mon Sep 17 00:00:00 2001
+From: "Emily.Deng" <Emily.Deng@amd.com>
+Date: Tue, 5 Jan 2021 11:21:25 +0800
+Subject: drm/amdgpu: Correct the read sclk for navi10
+
+According to hw, after navi10,it runs in dfll mode, and should
+read sclk from AverageGfxclkFrequency.
+
+Signed-off-by: Emily.Deng <Emily.Deng@amd.com>
+Acked-by: Alex Deucher <alexander.deucher@amd.com>
+Reviewed-by: Evan Quan <evan.quan@amd.com>
+Signed-off-by: Alex Deucher <alexander.deucher@amd.com>
+---
+ drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c b/drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c
+index 51e83123f72a1..7ebf9588983f4 100644
+--- a/drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c
++++ b/drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c
+@@ -1673,7 +1673,7 @@ static int navi10_read_sensor(struct smu_context *smu,
+ 		*size = 4;
+ 		break;
+ 	case AMDGPU_PP_SENSOR_GFX_SCLK:
+-		ret = navi10_get_current_clk_freq_by_table(smu, SMU_GFXCLK, (uint32_t *)data);
++		ret = navi10_get_smu_metrics_data(smu, METRICS_AVERAGE_GFXCLK, (uint32_t *)data);
+ 		*(uint32_t *)data *= 100;
+ 		*size = 4;
+ 		break;
+-- 
+cgit 1.2.3-1.el7
+
+From b131c363c8a37815e5c7d748883f7d3e1d8e40c2 Mon Sep 17 00:00:00 2001
+From: Ramesh Errabolu <Ramesh.Errabolu@amd.com>
+Date: Wed, 27 Jan 2021 21:34:22 -0600
+Subject: drm/amdgpu: Limit the maximum size of contiguous VRAM that can be
+ encapsulated by an instance of DRM memory node
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+[Why]
+Enable 1:1 mapping between VRAM of a DRM node and a scatterlist node
+
+[How]
+Ensure construction of DRM node to not exceed specified limit
+
+Reviewed-by: Christian König <christian.koenig@amd.com>
+Signed-off-by: Ramesh Errabolu <Ramesh.Errabolu@amd.com>
+Signed-off-by: Alex Deucher <alexander.deucher@amd.com>
+---
+ drivers/gpu/drm/amd/amdgpu/amdgpu_vram_mgr.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/gpu/drm/amd/amdgpu/amdgpu_vram_mgr.c b/drivers/gpu/drm/amd/amdgpu/amdgpu_vram_mgr.c
+index d2de2a720a3d8..c89b66bb70e2e 100644
+--- a/drivers/gpu/drm/amd/amdgpu/amdgpu_vram_mgr.c
++++ b/drivers/gpu/drm/amd/amdgpu/amdgpu_vram_mgr.c
+@@ -473,6 +473,9 @@ static int amdgpu_vram_mgr_new(struct ttm_resource_manager *man,
+ 	for (i = 0; pages_left >= pages_per_node; ++i) {
+ 		unsigned long pages = rounddown_pow_of_two(pages_left);
+ 
++		/* Limit maximum size to 2GB due to SG table limitations */
++		pages = min(pages, (2UL << (30 - PAGE_SHIFT)));
++
+ 		r = drm_mm_insert_node_in_range(mm, &nodes[i], pages,
+ 						pages_per_node, 0,
+ 						place->fpfn, lpfn,
+-- 
+cgit 1.2.3-1.el7
+
+From 006cc1a213cf9ff3d1307ff2d5c51e6c8d62a758 Mon Sep 17 00:00:00 2001
+From: Jiawei Gu <Jiawei.Gu@amd.com>
+Date: Fri, 5 Feb 2021 17:45:18 +0800
+Subject: drm/amdgpu: extend MAX_KIQ_REG_TRY to 1000
+
+Extend retry times of KIQ to avoid starvation situation caused by
+long time full access of GPU by other VFs.
+
+Signed-off-by: Jiawei Gu <Jiawei.Gu@amd.com>
+Reviewed-by: Emily.Deng <Emily.Deng@amd.com>
+Signed-off-by: Alex Deucher <alexander.deucher@amd.com>
+---
+ drivers/gpu/drm/amd/amdgpu/amdgpu.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/amd/amdgpu/amdgpu.h b/drivers/gpu/drm/amd/amdgpu/amdgpu.h
+index 9717cb43eb263..86452f4f3c82e 100644
+--- a/drivers/gpu/drm/amd/amdgpu/amdgpu.h
++++ b/drivers/gpu/drm/amd/amdgpu/amdgpu.h
+@@ -287,7 +287,7 @@ enum amdgpu_kiq_irq {
+ 
+ #define MAX_KIQ_REG_WAIT       5000 /* in usecs, 5ms */
+ #define MAX_KIQ_REG_BAILOUT_INTERVAL   5 /* in msecs, 5ms */
+-#define MAX_KIQ_REG_TRY 80 /* 20 -> 80 */
++#define MAX_KIQ_REG_TRY 1000
+ 
+ int amdgpu_device_ip_set_clockgating_state(void *dev,
+ 					   enum amd_ip_block_type block_type,
+-- 
+cgit 1.2.3-1.el7
+
+From b6f91fc183f758461b9462cc93e673adbbf95c2d Mon Sep 17 00:00:00 2001
+From: Xiaogang Chen <xiaogang.chen@amd.com>
+Date: Thu, 25 Feb 2021 12:06:34 -0500
+Subject: drm/amdgpu/display: buffer INTERRUPT_LOW_IRQ_CONTEXT interrupt work
+
+amdgpu DM handles INTERRUPT_LOW_IRQ_CONTEXT interrupt(hpd, hpd_rx) by using work
+queue and uses single work_struct. If new interrupt is recevied before the
+previous handler finished, new interrupts(same type) will be discarded and
+driver just sends "amdgpu_dm_irq_schedule_work FAILED" message out. If some
+important hpd, hpd_rx related interrupts are missed by driver the hot (un)plug
+devices may cause system hang or instability, such as issues with system
+resume from S3 sleep with mst device connected.
+
+This patch dynamically allocates new amdgpu_dm_irq_handler_data for new
+interrupts if previous INTERRUPT_LOW_IRQ_CONTEXT interrupt work has not been
+handled. So the new interrupt works can be queued to the same workqueue_struct,
+instead of discard the new interrupts. All allocated amdgpu_dm_irq_handler_data
+are put into a single linked list and will be reused after.
+
+Signed-off-by: Xiaogang Chen <xiaogang.chen@amd.com>
+Reviewed-by: Aurabindo Pillai <aurabindo.pillai@amd.com>
+Signed-off-by: Alex Deucher <alexander.deucher@amd.com>
+---
+ drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm.h  |  14 +--
+ .../gpu/drm/amd/display/amdgpu_dm/amdgpu_dm_irq.c  | 115 ++++++++++++++-------
+ 2 files changed, 80 insertions(+), 49 deletions(-)
+
+(limited to 'drivers/gpu/drm/amd')
+
+diff --git a/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm.h b/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm.h
+index 6792de32c98c4..4fbea832f002b 100644
+--- a/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm.h
++++ b/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm.h
+@@ -68,18 +68,6 @@ struct common_irq_params {
+ 	enum dc_irq_source irq_src;
+ };
+ 
+-/**
+- * struct irq_list_head - Linked-list for low context IRQ handlers.
+- *
+- * @head: The list_head within &struct handler_data
+- * @work: A work_struct containing the deferred handler work
+- */
+-struct irq_list_head {
+-	struct list_head head;
+-	/* In case this interrupt needs post-processing, 'work' will be queued*/
+-	struct work_struct work;
+-};
+-
+ /**
+  * struct dm_compressor_info - Buffer info used by frame buffer compression
+  * @cpu_addr: MMIO cpu addr
+@@ -293,7 +281,7 @@ struct amdgpu_display_manager {
+ 	 * Note that handlers are called in the same order as they were
+ 	 * registered (FIFO).
+ 	 */
+-	struct irq_list_head irq_handler_list_low_tab[DAL_IRQ_SOURCES_NUMBER];
++	struct list_head irq_handler_list_low_tab[DAL_IRQ_SOURCES_NUMBER];
+ 
+ 	/**
+ 	 * @irq_handler_list_high_tab:
+diff --git a/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm_irq.c b/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm_irq.c
+index e0000c180ed1f..8ce10d0973c5b 100644
+--- a/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm_irq.c
++++ b/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm_irq.c
+@@ -82,6 +82,7 @@ struct amdgpu_dm_irq_handler_data {
+ 	struct amdgpu_display_manager *dm;
+ 	/* DAL irq source which registered for this interrupt. */
+ 	enum dc_irq_source irq_source;
++	struct work_struct work;
+ };
+ 
+ #define DM_IRQ_TABLE_LOCK(adev, flags) \
+@@ -111,20 +112,10 @@ static void init_handler_common_data(struct amdgpu_dm_irq_handler_data *hcd,
+  */
+ static void dm_irq_work_func(struct work_struct *work)
+ {
+-	struct irq_list_head *irq_list_head =
+-		container_of(work, struct irq_list_head, work);
+-	struct list_head *handler_list = &irq_list_head->head;
+-	struct amdgpu_dm_irq_handler_data *handler_data;
+-
+-	list_for_each_entry(handler_data, handler_list, list) {
+-		DRM_DEBUG_KMS("DM_IRQ: work_func: for dal_src=%d\n",
+-				handler_data->irq_source);
++	struct amdgpu_dm_irq_handler_data *handler_data =
++		container_of(work, struct amdgpu_dm_irq_handler_data, work);
+ 
+-		DRM_DEBUG_KMS("DM_IRQ: schedule_work: for dal_src=%d\n",
+-			handler_data->irq_source);
+-
+-		handler_data->handler(handler_data->handler_arg);
+-	}
++	handler_data->handler(handler_data->handler_arg);
+ 
+ 	/* Call a DAL subcomponent which registered for interrupt notification
+ 	 * at INTERRUPT_LOW_IRQ_CONTEXT.
+@@ -156,7 +147,7 @@ static struct list_head *remove_irq_handler(struct amdgpu_device *adev,
+ 		break;
+ 	case INTERRUPT_LOW_IRQ_CONTEXT:
+ 	default:
+-		hnd_list = &adev->dm.irq_handler_list_low_tab[irq_source].head;
++		hnd_list = &adev->dm.irq_handler_list_low_tab[irq_source];
+ 		break;
+ 	}
+ 
+@@ -290,7 +281,8 @@ void *amdgpu_dm_irq_register_interrupt(struct amdgpu_device *adev,
+ 		break;
+ 	case INTERRUPT_LOW_IRQ_CONTEXT:
+ 	default:
+-		hnd_list = &adev->dm.irq_handler_list_low_tab[irq_source].head;
++		hnd_list = &adev->dm.irq_handler_list_low_tab[irq_source];
++		INIT_WORK(&handler_data->work, dm_irq_work_func);
+ 		break;
+ 	}
+ 
+@@ -372,7 +364,7 @@ void amdgpu_dm_irq_unregister_interrupt(struct amdgpu_device *adev,
+ int amdgpu_dm_irq_init(struct amdgpu_device *adev)
+ {
+ 	int src;
+-	struct irq_list_head *lh;
++	struct list_head *lh;
+ 
+ 	DRM_DEBUG_KMS("DM_IRQ\n");
+ 
+@@ -381,9 +373,7 @@ int amdgpu_dm_irq_init(struct amdgpu_device *adev)
+ 	for (src = 0; src < DAL_IRQ_SOURCES_NUMBER; src++) {
+ 		/* low context handler list init */
+ 		lh = &adev->dm.irq_handler_list_low_tab[src];
+-		INIT_LIST_HEAD(&lh->head);
+-		INIT_WORK(&lh->work, dm_irq_work_func);
+-
++		INIT_LIST_HEAD(lh);
+ 		/* high context handler init */
+ 		INIT_LIST_HEAD(&adev->dm.irq_handler_list_high_tab[src]);
+ 	}
+@@ -400,8 +390,11 @@ int amdgpu_dm_irq_init(struct amdgpu_device *adev)
+ void amdgpu_dm_irq_fini(struct amdgpu_device *adev)
+ {
+ 	int src;
+-	struct irq_list_head *lh;
++	struct list_head *lh;
++	struct list_head *entry, *tmp;
++	struct amdgpu_dm_irq_handler_data *handler;
+ 	unsigned long irq_table_flags;
++
+ 	DRM_DEBUG_KMS("DM_IRQ: releasing resources.\n");
+ 	for (src = 0; src < DAL_IRQ_SOURCES_NUMBER; src++) {
+ 		DM_IRQ_TABLE_LOCK(adev, irq_table_flags);
+@@ -410,7 +403,16 @@ void amdgpu_dm_irq_fini(struct amdgpu_device *adev)
+ 		 * (because no code can schedule a new one). */
+ 		lh = &adev->dm.irq_handler_list_low_tab[src];
+ 		DM_IRQ_TABLE_UNLOCK(adev, irq_table_flags);
+-		flush_work(&lh->work);
++
++		if (!list_empty(lh)) {
++			list_for_each_safe(entry, tmp, lh) {
++				handler = list_entry(
++					entry,
++					struct amdgpu_dm_irq_handler_data,
++					list);
++				flush_work(&handler->work);
++			}
++		}
+ 	}
+ }
+ 
+@@ -420,6 +422,8 @@ int amdgpu_dm_irq_suspend(struct amdgpu_device *adev)
+ 	struct list_head *hnd_list_h;
+ 	struct list_head *hnd_list_l;
+ 	unsigned long irq_table_flags;
++	struct list_head *entry, *tmp;
++	struct amdgpu_dm_irq_handler_data *handler;
+ 
+ 	DM_IRQ_TABLE_LOCK(adev, irq_table_flags);
+ 
+@@ -430,14 +434,22 @@ int amdgpu_dm_irq_suspend(struct amdgpu_device *adev)
+ 	 * will be disabled from manage_dm_interrupts on disable CRTC.
+ 	 */
+ 	for (src = DC_IRQ_SOURCE_HPD1; src <= DC_IRQ_SOURCE_HPD6RX; src++) {
+-		hnd_list_l = &adev->dm.irq_handler_list_low_tab[src].head;
++		hnd_list_l = &adev->dm.irq_handler_list_low_tab[src];
+ 		hnd_list_h = &adev->dm.irq_handler_list_high_tab[src];
+ 		if (!list_empty(hnd_list_l) || !list_empty(hnd_list_h))
+ 			dc_interrupt_set(adev->dm.dc, src, false);
+ 
+ 		DM_IRQ_TABLE_UNLOCK(adev, irq_table_flags);
+-		flush_work(&adev->dm.irq_handler_list_low_tab[src].work);
+ 
++		if (!list_empty(hnd_list_l)) {
++			list_for_each_safe (entry, tmp, hnd_list_l) {
++				handler = list_entry(
++					entry,
++					struct amdgpu_dm_irq_handler_data,
++					list);
++				flush_work(&handler->work);
++			}
++		}
+ 		DM_IRQ_TABLE_LOCK(adev, irq_table_flags);
+ 	}
+ 
+@@ -457,7 +469,7 @@ int amdgpu_dm_irq_resume_early(struct amdgpu_device *adev)
+ 
+ 	/* re-enable short pulse interrupts HW interrupt */
+ 	for (src = DC_IRQ_SOURCE_HPD1RX; src <= DC_IRQ_SOURCE_HPD6RX; src++) {
+-		hnd_list_l = &adev->dm.irq_handler_list_low_tab[src].head;
++		hnd_list_l = &adev->dm.irq_handler_list_low_tab[src];
+ 		hnd_list_h = &adev->dm.irq_handler_list_high_tab[src];
+ 		if (!list_empty(hnd_list_l) || !list_empty(hnd_list_h))
+ 			dc_interrupt_set(adev->dm.dc, src, true);
+@@ -483,7 +495,7 @@ int amdgpu_dm_irq_resume_late(struct amdgpu_device *adev)
+ 	 * will be enabled from manage_dm_interrupts on enable CRTC.
+ 	 */
+ 	for (src = DC_IRQ_SOURCE_HPD1; src <= DC_IRQ_SOURCE_HPD6; src++) {
+-		hnd_list_l = &adev->dm.irq_handler_list_low_tab[src].head;
++		hnd_list_l = &adev->dm.irq_handler_list_low_tab[src];
+ 		hnd_list_h = &adev->dm.irq_handler_list_high_tab[src];
+ 		if (!list_empty(hnd_list_l) || !list_empty(hnd_list_h))
+ 			dc_interrupt_set(adev->dm.dc, src, true);
+@@ -500,22 +512,53 @@ int amdgpu_dm_irq_resume_late(struct amdgpu_device *adev)
+ static void amdgpu_dm_irq_schedule_work(struct amdgpu_device *adev,
+ 					enum dc_irq_source irq_source)
+ {
+-	unsigned long irq_table_flags;
+-	struct work_struct *work = NULL;
++	struct  list_head *handler_list = &adev->dm.irq_handler_list_low_tab[irq_source];
++	struct  amdgpu_dm_irq_handler_data *handler_data;
++	bool    work_queued = false;
+ 
+-	DM_IRQ_TABLE_LOCK(adev, irq_table_flags);
++	if (list_empty(handler_list))
++		return;
++
++	list_for_each_entry (handler_data, handler_list, list) {
++		if (!queue_work(system_highpri_wq, &handler_data->work)) {
++			continue;
++		} else {
++			work_queued = true;
++			break;
++		}
++	}
+ 
+-	if (!list_empty(&adev->dm.irq_handler_list_low_tab[irq_source].head))
+-		work = &adev->dm.irq_handler_list_low_tab[irq_source].work;
++	if (!work_queued) {
++		struct  amdgpu_dm_irq_handler_data *handler_data_add;
++		/*get the amdgpu_dm_irq_handler_data of first item pointed by handler_list*/
++		handler_data = container_of(handler_list->next, struct amdgpu_dm_irq_handler_data, list);
+ 
+-	DM_IRQ_TABLE_UNLOCK(adev, irq_table_flags);
++		/*allocate a new amdgpu_dm_irq_handler_data*/
++		handler_data_add = kzalloc(sizeof(*handler_data), GFP_KERNEL);
++		if (!handler_data_add) {
++			DRM_ERROR("DM_IRQ: failed to allocate irq handler!\n");
++			return;
++		}
+ 
+-	if (work) {
+-		if (!schedule_work(work))
+-			DRM_INFO("amdgpu_dm_irq_schedule_work FAILED src %d\n",
+-						irq_source);
+-	}
++		/*copy new amdgpu_dm_irq_handler_data members from handler_data*/
++		handler_data_add->handler       = handler_data->handler;
++		handler_data_add->handler_arg   = handler_data->handler_arg;
++		handler_data_add->dm            = handler_data->dm;
++		handler_data_add->irq_source    = irq_source;
+ 
++		list_add_tail(&handler_data_add->list, handler_list);
++
++		INIT_WORK(&handler_data_add->work, dm_irq_work_func);
++
++		if (queue_work(system_highpri_wq, &handler_data_add->work))
++			DRM_DEBUG("Queued work for handling interrupt from "
++				  "display for IRQ source %d\n",
++				  irq_source);
++		else
++			DRM_ERROR("Failed to queue work for handling interrupt "
++				  "from display for IRQ source %d\n",
++				  irq_source);
++	}
+ }
+ 
+ /*
+-- 
+cgit 1.2.3-1.el7
+
+From b4d916ee0e947f727b48c5abfc1fa5aed3243763 Mon Sep 17 00:00:00 2001
+From: Chen Li <chenli@uniontech.com>
+Date: Wed, 3 Mar 2021 11:53:20 +0800
+Subject: drm/amdgpu: Use kvmalloc for CS chunks
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The number of chunks/chunks_array may be passed in
+by userspace and can be large.
+
+Reviewed-by: Christian König <christian.koenig@amd.com>
+Signed-off-by: Chen Li <chenli@uniontech.com>
+Signed-off-by: Alex Deucher <alexander.deucher@amd.com>
+---
+ drivers/gpu/drm/amd/amdgpu/amdgpu_cs.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+(limited to 'drivers/gpu/drm/amd')
+
+diff --git a/drivers/gpu/drm/amd/amdgpu/amdgpu_cs.c b/drivers/gpu/drm/amd/amdgpu/amdgpu_cs.c
+index 3e240b952e791..d9ae2cb86bc73 100644
+--- a/drivers/gpu/drm/amd/amdgpu/amdgpu_cs.c
++++ b/drivers/gpu/drm/amd/amdgpu/amdgpu_cs.c
+@@ -117,7 +117,7 @@ static int amdgpu_cs_parser_init(struct amdgpu_cs_parser *p, union drm_amdgpu_cs
+ 	if (cs->in.num_chunks == 0)
+ 		return 0;
+ 
+-	chunk_array = kmalloc_array(cs->in.num_chunks, sizeof(uint64_t), GFP_KERNEL);
++	chunk_array = kvmalloc_array(cs->in.num_chunks, sizeof(uint64_t), GFP_KERNEL);
+ 	if (!chunk_array)
+ 		return -ENOMEM;
+ 
+@@ -144,7 +144,7 @@ static int amdgpu_cs_parser_init(struct amdgpu_cs_parser *p, union drm_amdgpu_cs
+ 	}
+ 
+ 	p->nchunks = cs->in.num_chunks;
+-	p->chunks = kmalloc_array(p->nchunks, sizeof(struct amdgpu_cs_chunk),
++	p->chunks = kvmalloc_array(p->nchunks, sizeof(struct amdgpu_cs_chunk),
+ 			    GFP_KERNEL);
+ 	if (!p->chunks) {
+ 		ret = -ENOMEM;
+@@ -238,7 +238,7 @@ static int amdgpu_cs_parser_init(struct amdgpu_cs_parser *p, union drm_amdgpu_cs
+ 
+ 	if (p->uf_entry.tv.bo)
+ 		p->job->uf_addr = uf_offset;
+-	kfree(chunk_array);
++	kvfree(chunk_array);
+ 
+ 	/* Use this opportunity to fill in task info for the vm */
+ 	amdgpu_vm_set_task_info(vm);
+@@ -250,11 +250,11 @@ free_all_kdata:
+ free_partial_kdata:
+ 	for (; i >= 0; i--)
+ 		kvfree(p->chunks[i].kdata);
+-	kfree(p->chunks);
++	kvfree(p->chunks);
+ 	p->chunks = NULL;
+ 	p->nchunks = 0;
+ free_chunk:
+-	kfree(chunk_array);
++	kvfree(chunk_array);
+ 
+ 	return ret;
+ }
+@@ -706,7 +706,7 @@ static void amdgpu_cs_parser_fini(struct amdgpu_cs_parser *parser, int error,
+ 
+ 	for (i = 0; i < parser->nchunks; i++)
+ 		kvfree(parser->chunks[i].kdata);
+-	kfree(parser->chunks);
++	kvfree(parser->chunks);
+ 	if (parser->job)
+ 		amdgpu_job_free(parser->job);
+ 	if (parser->uf_entry.tv.bo) {
+-- 
+cgit 1.2.3-1.el7
+

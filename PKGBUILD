@@ -11,7 +11,7 @@ _kernelname=-vd
 _sub=2
 #_rc=rc7
 pkgver=${_basekernel}.${_sub}
-pkgrel=4
+pkgrel=5
 _archpatch=20210301
 _prjc="r1"
 _stablequeue=79368accd6
@@ -51,27 +51,23 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver}.tar.{xz,sig
     # tip:sched/core
     0013-tip-sched-core-20210302.patch
     # 0013-tip-sched-core-no-dyn-preempt-20210302.patch # for use with ProjectC
-    # sched balance tweaks
-    0014-sched-fair-misfit-task-load-balance-tweaks-v2.patch
     # rcu fixes
-    0015-rcu-fixes-next.patch
+    0014-rcu-fixes-next.patch
     # rcu fix prio boost
-    0016-rcu-fix-priority-boosting.patch
+    0015-rcu-fix-priority-boosting.patch
     # amdgpu
-    0017-drm-amdgpu-fixes-next.patch
+    0016-drm-amdgpu-fixes-next.patch
     # fs buffer fix
-    0018-fs-buffer-revoke-lru-when-trying-to-drop-buffers-v4.patch
+    0017-fs-buffer-revoke-lru-when-trying-to-drop-buffers-v4.patch
     # btrfs patches
     # 0019-btrfs-patches-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11/btrfs-patches-v3/0001-btrfs-patches.patch
-    0019-btrfs-patches-sirlucjan.patch
+    0018-btrfs-patches-sirlucjan.patch
     # multigenerational lru by google
-    0020-multigenerational-lru-v1.patch
+    0019-multigenerational-lru-v1.patch
     # Nuvoton nc677x driver
-    0021-i2c-nuvoton-nc677x-hwmon-driver-git.patch::https://gitlab.com/CalcProgrammer1/OpenRGB/-/raw/master/OpenRGB.patch
+    0020-i2c-nuvoton-nc677x-hwmon-driver-git.patch::https://gitlab.com/CalcProgrammer1/OpenRGB/-/raw/master/OpenRGB.patch
     # async initramfs unpacking
-    0022-init-initramfs.c-allow-asynchronous-unpacking.patch
-    # sched/fair fixes - disable when using ProjectC
-    0023-move-update-blocked-load-outside-newidle_balance.patch
+    0021-init-initramfs.c-allow-asynchronous-unpacking.patch
     #
     # futex_wait_multiple
     1001-futex-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11/futex-trunk-patches/0001-futex-resync-from-gitlab.collabora.com.patch
@@ -132,17 +128,15 @@ sha256sums=('904a5b3cbaf5264ef8da6c7a5445fa7ea19168ad77fb83a7cc1b8ba95d52d0a0'
             '18a84957915dd924cbdddfb031954f97e951bd96f5593fb1eb8c73bc4a61bd3f'
             '623a3b02b980fcd52bc7d230be1661ada7b557e3cd83c0560666e1f010bd3509'
             '9e86bfb28c4c9a30a116f57c24d57cf7488df2755198425522564b4e8f8015e7'
-            '10c14fa338f4db9dbee9014a7f68641317aa25d0383633a4a467107f39cefc7b'
-            '4214820327a243167570b54611830d7a227f79c398c256ba40924fab077e99f6'
+            'b4739221e373044fe1bd651cc87cc49768c2d2827cb7288cbab82a7a8d9cf94c'
             'a652bf7985cd0633ee12e61efb9dd898f28468e93caa852e210923fed92724fb'
             '49b29307ee96f85db5949866fd2f5a76502dd5be7564771febfe57c807b4f740'
-            '1922dca263ce9f9790fd37e8ead35e32eea0df0391b1d83c6dcef911411d807a'
+            'de04c29f815c0a2f9cac948c930c0933ec2a38b18367b327d3b626e96206a823'
             '1523298b9c29fa80ecc945982b7e450b5a9128054f91bce0fc596141ed3d1df2'
             '76929af12dea82c734506e06cd556173d9888f47fb4c6a7abb53a873abd7c7e5'
             'ca2cd10fc86d3347d98da60e11b8ca02544d62d4da6179b9555fc92cacfb6838'
             'e7d724ac15daf428aa1e6a03737e5c1d040892d55fda8a66897fcac9323f285c'
             'ebb1cc8dd0bdcde7246aacee531d06a5b035ccd481f4c306f2316010a7be2282'
-            '36335d6fa322427d4771804f4ef39417feda966a10da275ef0311e61f1193b1c'
             '239307e0018ab2405b9afaa7d315ee3352b83819a3c75b65951749b52a3247d2'
             '7fd689f4ec88364d1ac00007e6f1e273ee9b53cae187e0f70e7f810303dc9303'
             'f7a36231b794022d49e53f464d25e48f2eebf6266c2cbe5756c63aa3bf03bae7'

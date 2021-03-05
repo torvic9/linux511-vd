@@ -11,10 +11,10 @@ _kernelname=-vd
 _sub=3
 #_rc=rc7
 pkgver=${_basekernel}.${_sub}
-pkgrel=1
+pkgrel=2
 _archpatch=20210301
 _prjc="r1"
-_stablequeue=79368accd6
+_stablequeue=967f085649
 arch=('x86_64')
 url="http://www.kernel.org/"
 license=('GPL2')
@@ -26,7 +26,7 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver}.tar.{xz,sig
     'config.x86_64' 'config.x270' 'config.zen2' 'x509.genkey' "${pkgbase}.preset"
     #
     # Prepatch from stable-queue
-    # "prepatch-${_basekernel/./}-g${_stablequeue}.patch"
+    "prepatch-${_basekernel/./}-g${_stablequeue}.patch"
     #
     # Arch patches
     # 0001-arch-patches511-${_archpatch}.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11/arch-patches-v5/0001-arch-patches.patch
@@ -49,8 +49,8 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver}.tar.{xz,sig
     # bfq fixes
     0012-block-bfq-fixes-and-improvements.patch
     # tip:sched/core
-    0013-tip-sched-core-20210302.patch
-    # 0013-tip-sched-core-no-dyn-preempt-20210302.patch # for use with ProjectC
+    0013-tip-sched-core-20210305.patch
+    # 0013-tip-sched-core-no-dyn-preempt-20210305.patch # for use with ProjectC
     # rcu fixes
     0014-rcu-fixes-next.patch
     # rcu fix prio boost
@@ -115,6 +115,7 @@ sha256sums=('3558c70bb3805763c250df3b2c29225cedfce849483afd4ecba27e29ecb1cbfe'
             '512f401d95d6612aa050285dcd3c495af0031d313488824f56f9d21ce03c5490'
             'ab010dc5ef6ce85d352956e5996d242246ecd0912b30f0b72025c38eadff8cd5'
             '8f357fab1c5b3e81240b543a6643fdbca1d8591f5dd18bc18e38ae992d78944c'
+            '6902f56ed38c2c2fb9876dc7c68ec739e974ce2d90e5f3b85512a027bfb070d4'
             '8c8f0080e5ecbb3b4982e288d3393dedfc7001227753983e128318b23ca117fa'
             '9b0c200b0dadfcfb1b3c42acd0c007e1d582a86abc6b04f3096e0535c8784ab6'
             '3d38fc4052b999b67aaed9fe9a4ba6ffd778ffbf7e94a66d5577391dbd08d12a'
@@ -127,7 +128,7 @@ sha256sums=('3558c70bb3805763c250df3b2c29225cedfce849483afd4ecba27e29ecb1cbfe'
             '18a84957915dd924cbdddfb031954f97e951bd96f5593fb1eb8c73bc4a61bd3f'
             '623a3b02b980fcd52bc7d230be1661ada7b557e3cd83c0560666e1f010bd3509'
             '9e86bfb28c4c9a30a116f57c24d57cf7488df2755198425522564b4e8f8015e7'
-            'b4739221e373044fe1bd651cc87cc49768c2d2827cb7288cbab82a7a8d9cf94c'
+            'ca02a2a5cbcbc62bb02b55165e3b5fc615f5fa7d7d1a725ece09015131f41157'
             'a652bf7985cd0633ee12e61efb9dd898f28468e93caa852e210923fed92724fb'
             '49b29307ee96f85db5949866fd2f5a76502dd5be7564771febfe57c807b4f740'
             'de04c29f815c0a2f9cac948c930c0933ec2a38b18367b327d3b626e96206a823'

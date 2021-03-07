@@ -8,10 +8,10 @@ pkgbase=linux511-vd
 pkgname=('linux511-vd' 'linux511-vd-headers')
 _basekernel=5.11
 _kernelname=-vd
-_sub=3
+_sub=4
 #_rc=rc7
 pkgver=${_basekernel}.${_sub}
-pkgrel=2
+pkgrel=1
 _archpatch=20210301
 _prjc="r1"
 _stablequeue=967f085649
@@ -26,7 +26,7 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver}.tar.{xz,sig
     'config.x86_64' 'config.x270' 'config.zen2' 'x509.genkey' "${pkgbase}.preset"
     #
     # Prepatch from stable-queue
-    "prepatch-${_basekernel/./}-g${_stablequeue}.patch"
+    # "prepatch-${_basekernel/./}-g${_stablequeue}.patch"
     #
     # Arch patches
     # 0001-arch-patches511-${_archpatch}.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11/arch-patches-v5/0001-arch-patches.patch
@@ -108,14 +108,13 @@ validpgpkeys=(
   '647F28654894E3BD457199BE38DBBDC86092693E'  # Greg Kroah-Hartman
 )
 
-sha256sums=('3558c70bb3805763c250df3b2c29225cedfce849483afd4ecba27e29ecb1cbfe'
+sha256sums=('88e59fafc9653cb7eef501cef3eda677843027735fd11325a75e353b10770dc5'
             'SKIP'
             'f2b7a8cf91c49a68e20c8ec8013c3e852348defeb55172a31ec6558f20da49c9'
             '9afa4aa97b7b0c4116a5cc8716a65a1289407d96bf3adc78b73d9197a9c39fa9'
             '512f401d95d6612aa050285dcd3c495af0031d313488824f56f9d21ce03c5490'
             'ab010dc5ef6ce85d352956e5996d242246ecd0912b30f0b72025c38eadff8cd5'
             '8f357fab1c5b3e81240b543a6643fdbca1d8591f5dd18bc18e38ae992d78944c'
-            '6902f56ed38c2c2fb9876dc7c68ec739e974ce2d90e5f3b85512a027bfb070d4'
             '8c8f0080e5ecbb3b4982e288d3393dedfc7001227753983e128318b23ca117fa'
             '9b0c200b0dadfcfb1b3c42acd0c007e1d582a86abc6b04f3096e0535c8784ab6'
             '3d38fc4052b999b67aaed9fe9a4ba6ffd778ffbf7e94a66d5577391dbd08d12a'

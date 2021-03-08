@@ -11,10 +11,10 @@ _kernelname=-vd
 _sub=4
 #_rc=rc7
 pkgver=${_basekernel}.${_sub}
-pkgrel=1
+pkgrel=2
 _archpatch=20210301
 _prjc="r1"
-_stablequeue=967f085649
+_stablequeue=7f889ae426
 arch=('x86_64')
 url="http://www.kernel.org/"
 license=('GPL2')
@@ -26,7 +26,7 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver}.tar.{xz,sig
     'config.x86_64' 'config.x270' 'config.zen2' 'x509.genkey' "${pkgbase}.preset"
     #
     # Prepatch from stable-queue
-    # "prepatch-${_basekernel/./}-g${_stablequeue}.patch"
+    "prepatch-${_basekernel/./}-g${_stablequeue}.patch"
     #
     # Arch patches
     # 0001-arch-patches511-${_archpatch}.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11/arch-patches-v5/0001-arch-patches.patch
@@ -115,6 +115,7 @@ sha256sums=('88e59fafc9653cb7eef501cef3eda677843027735fd11325a75e353b10770dc5'
             '512f401d95d6612aa050285dcd3c495af0031d313488824f56f9d21ce03c5490'
             'ab010dc5ef6ce85d352956e5996d242246ecd0912b30f0b72025c38eadff8cd5'
             '8f357fab1c5b3e81240b543a6643fdbca1d8591f5dd18bc18e38ae992d78944c'
+            'ea795e425d4a6e19d4a7d5a723bb572b6e3547e1f9499508b28cbcb544066ce9'
             '8c8f0080e5ecbb3b4982e288d3393dedfc7001227753983e128318b23ca117fa'
             '9b0c200b0dadfcfb1b3c42acd0c007e1d582a86abc6b04f3096e0535c8784ab6'
             '3d38fc4052b999b67aaed9fe9a4ba6ffd778ffbf7e94a66d5577391dbd08d12a'
@@ -132,7 +133,7 @@ sha256sums=('88e59fafc9653cb7eef501cef3eda677843027735fd11325a75e353b10770dc5'
             '49b29307ee96f85db5949866fd2f5a76502dd5be7564771febfe57c807b4f740'
             'de04c29f815c0a2f9cac948c930c0933ec2a38b18367b327d3b626e96206a823'
             '1523298b9c29fa80ecc945982b7e450b5a9128054f91bce0fc596141ed3d1df2'
-            '76929af12dea82c734506e06cd556173d9888f47fb4c6a7abb53a873abd7c7e5'
+            '7ab8ac222da738405eee6919ccc97115afce7739714ce983d5f4f2755d59ada5'
             'ca2cd10fc86d3347d98da60e11b8ca02544d62d4da6179b9555fc92cacfb6838'
             'e7d724ac15daf428aa1e6a03737e5c1d040892d55fda8a66897fcac9323f285c'
             'ebb1cc8dd0bdcde7246aacee531d06a5b035ccd481f4c306f2316010a7be2282'

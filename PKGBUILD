@@ -68,6 +68,8 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver}.tar.{xz,sig
     0020-i2c-nuvoton-nc677x-hwmon-driver-git.patch::https://gitlab.com/CalcProgrammer1/OpenRGB/-/raw/master/OpenRGB.patch
     # async initramfs unpacking
     0021-init-initramfs.c-allow-asynchronous-unpacking.patch
+    # hrtimer fix
+    0022-hrtimer-softirq-fix.patch
     #
     # futex_wait_multiple
     1001-futex-sirlucjan.patch::https://raw.githubusercontent.com/sirlucjan/kernel-patches/master/5.11/futex-trunk-patches/0001-futex-resync-from-gitlab.collabora.com.patch
@@ -84,6 +86,8 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver}.tar.{xz,sig
     2006-optimise-kernel-and-module-compression.patch
     # ntfs3 driver
     2007-ntfs-rw-gpl-driver-implementation-by-paragon-v21.patch
+    # kcpuid tool
+    2008-tools-x86-add-kcpuid.patch
     #
     # Project C (BMQ+PDS)
     # 3001-projectc511-${_prjc}-orig.patch::https://gitlab.com/alfredchen/linux-prjc/uploads/604a80e2e5ac99c431f0944e4e986aa6/prjc_v5.11-r1.patch
@@ -137,6 +141,7 @@ sha256sums=('88e59fafc9653cb7eef501cef3eda677843027735fd11325a75e353b10770dc5'
             'ca2cd10fc86d3347d98da60e11b8ca02544d62d4da6179b9555fc92cacfb6838'
             'e7d724ac15daf428aa1e6a03737e5c1d040892d55fda8a66897fcac9323f285c'
             'ebb1cc8dd0bdcde7246aacee531d06a5b035ccd481f4c306f2316010a7be2282'
+            'bc08a777a028c56a2ff576592820cec7aa574a2c30b747d365b4e9234bd32f85'
             '239307e0018ab2405b9afaa7d315ee3352b83819a3c75b65951749b52a3247d2'
             '7fd689f4ec88364d1ac00007e6f1e273ee9b53cae187e0f70e7f810303dc9303'
             'f7a36231b794022d49e53f464d25e48f2eebf6266c2cbe5756c63aa3bf03bae7'
@@ -145,6 +150,7 @@ sha256sums=('88e59fafc9653cb7eef501cef3eda677843027735fd11325a75e353b10770dc5'
             '02d2c0e6b2459d4dbd6d4cecb3b269545a78b86cc9d2d3a0fda80bb3c3ee7604'
             '33752d734f2276e5f396da3512a7a7f47b8bb6037b70d17120fd5c30f807a8cd'
             '24a024268e8ac2548078ad7ea3445a2331d21df6eb01f5caf9b1b42caf4241bb'
+            'a3feec582e3c575ff43f028f46c9c41cf1f5a1943955805613fdcd1c639bed57'
             'cd96250876c30af9a1b5a7f8191ab8390842c993bd92f6987fb661e3edf1941e'
             '4b6698dab016c6b76eae4c4fa107a6c13806bc0dbfd143a06cebd07561a4080f'
             'defe5d56d9d93aa785c4ba4fe5f2682c00a9a3fdb19fedeeeb95aae8261d8c0e'
@@ -186,7 +192,7 @@ prepare() {
 
   echo -e "\n---- Reverts:" # add reverts here
   patch -Rp1 -i "../sched-fair-update_pick_idlest.revert"
-  
+
   # apply patch from the source array (should be a pacman feature)
   local filename filename2
   for filename in "${source[@]}"; do
@@ -245,6 +251,7 @@ build() {
 
   # build!
   make $LLVMOPTS LOCALVERSION= bzImage modules
+  make $CLANGOPTS -C tools/arch/x86/kcpuid
   # below cmd is for using a pgo profile, 1st without LTO, 2nd with LTO
   # make $LLVMOPTS KCFLAGS=-fprofile-use=vmlinux.profdata LOCALVERSION= bzImage modules
   # make $LLVMOPTS KCFLAGS=-lto-cs-profile-file=vmlinux.profdata LOCALVERSION= bzImage modules
@@ -310,6 +317,9 @@ package_linux511-vd-headers() {
 
   # add objtool for external module building and enabled VALIDATION_STACK option
   install -Dt "${_builddir}/tools/objtool" tools/objtool/objtool
+
+  # add kcpuid
+  install -Dt "${_builddir}/tools/arch/x86/kcpuid" tools/arch/x86/kcpuid/kcpuid
 
   # add xfs and shmem for aufs building
   mkdir -p "${_builddir}"/{fs/xfs,mm}

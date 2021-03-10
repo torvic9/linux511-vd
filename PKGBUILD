@@ -67,7 +67,7 @@ source=(https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-${pkgver}.tar.{xz,sig
     # Nuvoton nc677x driver
     0020-i2c-nuvoton-nc677x-hwmon-driver-git.patch::https://gitlab.com/CalcProgrammer1/OpenRGB/-/raw/master/OpenRGB.patch
     # async initramfs unpacking
-    0021-init-initramfs.c-allow-asynchronous-unpacking.patch
+    0021-init-initramfs.c-allow-asynchronous-unpacking-v2.patch
     # hrtimer fix
     0022-hrtimer-softirq-fix.patch
     #
@@ -139,7 +139,7 @@ sha256sums=('2208e4617b63a889373fb3f85ef56a73aeba83c117516bfcc92ef44b08bd3d6b'
             '7ab8ac222da738405eee6919ccc97115afce7739714ce983d5f4f2755d59ada5'
             'ca2cd10fc86d3347d98da60e11b8ca02544d62d4da6179b9555fc92cacfb6838'
             'e7d724ac15daf428aa1e6a03737e5c1d040892d55fda8a66897fcac9323f285c'
-            'ebb1cc8dd0bdcde7246aacee531d06a5b035ccd481f4c306f2316010a7be2282'
+            'afba59f054de913bb6d0e943019f35959eaa91e0847733e5a762c8437a048f9d'
             'bc08a777a028c56a2ff576592820cec7aa574a2c30b747d365b4e9234bd32f85'
             '239307e0018ab2405b9afaa7d315ee3352b83819a3c75b65951749b52a3247d2'
             '7fd689f4ec88364d1ac00007e6f1e273ee9b53cae187e0f70e7f810303dc9303'
@@ -318,14 +318,14 @@ package_linux511-vd-headers() {
   install -Dt "${_builddir}/tools/objtool" tools/objtool/objtool
 
   # add kcpuid
-  install -Dt "${_builddir}/tools/arch/x86/kcpuid" tools/arch/x86/kcpuid/kcpuid
+  install -Dvm755 "./tools/arch/x86/kcpuid/kcpuid" "${pkgdir}/usr/bin/kcpuid"
+  install -Dvm444 "./tools/arch/x86/kcpuid/cpuid.csv" "${pkgdir}/usr/share/misc/cpuid.csv"
 
   # add xfs and shmem for aufs building
   mkdir -p "${_builddir}"/{fs/xfs,mm}
 
   cp -t "${_builddir}/arch/x86" -a "arch/x86/include"
   install -Dt "${_builddir}/arch/x86/kernel" -m644 "arch/x86/kernel/asm-offsets.s"
-  #install -Dt "${_builddir}/arch/${KARCH}/kernel" -m644 "arch/${KARCH}/kernel/macros.s"
 
   install -Dt "${_builddir}/drivers/md" -m644 drivers/md/*.h
   install -Dt "${_builddir}/net/mac80211" -m644 net/mac80211/*.h

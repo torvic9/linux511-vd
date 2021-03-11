@@ -8,7 +8,7 @@ pkgbase=linux511-vd
 pkgname=('linux511-vd' 'linux511-vd-headers')
 _basekernel=5.11
 _kernelname=-vd
-_sub=5
+_sub=6
 #_rc=rc7
 pkgver=${_basekernel}.${_sub}
 pkgrel=1
@@ -112,7 +112,7 @@ validpgpkeys=(
   '647F28654894E3BD457199BE38DBBDC86092693E'  # Greg Kroah-Hartman
 )
 
-sha256sums=('2208e4617b63a889373fb3f85ef56a73aeba83c117516bfcc92ef44b08bd3d6b'
+sha256sums=('e970796a6ed451c59225b32ca525520442647c072ec1867e1aac508ad9c1ac09'
             'SKIP'
             'f2b7a8cf91c49a68e20c8ec8013c3e852348defeb55172a31ec6558f20da49c9'
             '9afa4aa97b7b0c4116a5cc8716a65a1289407d96bf3adc78b73d9197a9c39fa9'
